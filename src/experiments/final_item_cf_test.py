@@ -128,7 +128,9 @@ used to select or change the model or its hyperparameters.
 def run_final_test(args: argparse.Namespace) -> dict[str, float]:
     """Fit the frozen model on train and evaluate the untouched test split."""
 
+    # Step 1: restore the validation winner without changing any parameter.
     config, validation_metrics = load_frozen_config(args.best_config)
+    # Step 2: load train and the held-out test split using the fixed matrix shape.
     shape = (args.total_users, args.total_items)
     train = load_interactions(args.train, shape=shape).ratings
     test = load_interactions(args.test, shape=shape).ratings
@@ -136,6 +138,7 @@ def run_final_test(args: argparse.Namespace) -> dict[str, float]:
     if not relevant:
         raise ValueError("No test user has a relevant item at the selected threshold")
 
+    # Step 3: fit once, evaluate once, and persist the final comparison evidence.
     fit_started = time.perf_counter()
     model = ItemItemCF(config).fit(train)
     fit_seconds = time.perf_counter() - fit_started
@@ -156,14 +159,14 @@ def run_final_test(args: argparse.Namespace) -> dict[str, float]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--train", type=Path, default=Path("data/experiment_v4/train.csv"))
-    parser.add_argument("--test", type=Path, default=Path("data/experiment_v4/test.csv"))
+    parser.add_argument("--train", type=Path, default=Path("data/experiment/train.csv"))
+    parser.add_argument("--test", type=Path, default=Path("data/experiment/test.csv"))
     parser.add_argument(
         "--best-config",
         type=Path,
-        default=Path("reports/v4/item_cf/best_item_cf.json"),
+        default=Path("reports/item_cf/best_item_cf.json"),
     )
-    parser.add_argument("--output-dir", type=Path, default=Path("reports/v4/item_cf"))
+    parser.add_argument("--output-dir", type=Path, default=Path("reports/item_cf"))
     parser.add_argument("--total-users", type=int, default=20_000)
     parser.add_argument("--total-items", type=int, default=2_000)
     parser.add_argument("--top-k", type=int, default=10, choices=(10,))

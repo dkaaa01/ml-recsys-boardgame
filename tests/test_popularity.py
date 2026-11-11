@@ -5,6 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
+from scipy import sparse
+
+from src.models.content_based import (
+    ContentBasedRecommender,
+    ContentConfig,
+    build_item_features,
+)
 from src.models.popularity import rank_popular_games, recommend_unseen_games
 
 
@@ -29,6 +37,48 @@ class PopularityTest(unittest.TestCase):
             self.assertAlmostEqual(metadata["global_mean_rating"], 7.75)
             recommendations = recommend_unseen_games(ranking, seen_item_ids={0}, top_k=1)
             self.assertEqual(recommendations[0]["name"], "Average Game")
+
+
+class ContentBasedTest(unittest.TestCase):
+    def test_description_and_tags_produce_personalized_unseen_ranking(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            games = Path(temporary) / "games.csv"
+            with games.open("w", newline="", encoding="utf-8") as output:
+                writer = csv.writer(output)
+                writer.writerow(
+                    ("item_id", "description", "categories", "mechanics")
+                )
+                writer.writerows(
+                    (
+                        (0, "Explore a space galaxy with starships", "['Space']", "['Exploration']"),
+                        (1, "Explore distant planets in the galaxy", "['Space']", "['Exploration']"),
+                        (2, "Grow crops and animals on a farm", "['Farming']", "['Worker Placement']"),
+                    )
+                )
+            config = ContentConfig(
+                max_description_features=50,
+                min_document_frequency=1,
+                description_weight=0.5,
+            )
+            features = build_item_features(games, config, expected_items=3)
+            ratings = sparse.csr_matrix(
+                np.array(((9.0, 0.0, 0.0), (0.0, 0.0, 9.0)), dtype=np.float32)
+            )
+            model = ContentBasedRecommender(config).fit(ratings, features.matrix)
+
+            recommendations, scores = model.recommend([0], top_k=2, batch_size=1)
+
+            self.assertEqual(recommendations[0][0], 1)
+            self.assertNotIn(0, recommendations[0])
+            self.assertGreater(scores[0][0], scores[0][1])
+            predictions = model.predict_pairs([0, 1], [1, 2])
+            self.assertTrue(np.all((predictions >= 1.0) & (predictions <= 10.0)))
+
+    def test_invalid_content_config_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            ContentConfig(description_weight=1.5)
+        with self.assertRaises(ValueError):
+            ContentConfig(max_description_features=0)
 
 
 if __name__ == "__main__":

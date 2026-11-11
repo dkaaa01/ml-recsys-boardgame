@@ -57,6 +57,7 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
 
     if not 0 < args.sample_users <= args.total_users:
         raise ValueError("sample_users must be between 1 and total_users")
+    # Step 1: load the deterministic user cohort from train and validation only.
     users = sample_user_ids(args.total_users, args.sample_users, args.seed)
     shape = (args.total_users, args.total_items)
     train = load_interactions(args.train, shape=shape, user_filter=users).ratings
@@ -65,10 +66,12 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
     if not relevant:
         raise ValueError("No validation user has a relevant item; increase sample size")
 
+    # Step 2: fit and evaluate every predetermined hyperparameter configuration.
     rows = [
         _run_trial(trial, config, train, validation, relevant, args.top_k)
         for trial, config in enumerate(build_trial_configs(args.trials, args.seed))
     ]
+    # Step 3: freeze the validation winner and save metrics plus diagnostics.
     best = max(rows, key=selection_key)
     save_search_outputs(rows, best, args.output_dir)
     return rows
@@ -91,12 +94,12 @@ def _run_trial(trial, config, train, validation, relevant, top_k) -> dict[str, o
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--train", type=Path, default=Path("data/experiment_v4/train.csv"))
+    parser.add_argument("--train", type=Path, default=Path("data/experiment/train.csv"))
     parser.add_argument(
-        "--validation", type=Path, default=Path("data/experiment_v4/validation.csv")
+        "--validation", type=Path, default=Path("data/experiment/validation.csv")
     )
     parser.add_argument(
-        "--output-dir", type=Path, default=Path("reports/v4/matrix_factorization")
+        "--output-dir", type=Path, default=Path("reports/matrix_factorization")
     )
     parser.add_argument("--total-users", type=int, default=20_000)
     parser.add_argument("--total-items", type=int, default=2_000)

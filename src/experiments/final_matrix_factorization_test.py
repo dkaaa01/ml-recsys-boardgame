@@ -37,7 +37,9 @@ def load_frozen_config(path: Path) -> tuple[MatrixFactorizationConfig, dict[str,
 def run_final_test(args: argparse.Namespace) -> dict[str, float]:
     """Fit the frozen winner and evaluate the test split exactly once."""
 
+    # Step 1: restore the validation winner without changing any parameter.
     config, validation = load_frozen_config(args.best_config)
+    # Step 2: load train and the held-out test split using the fixed matrix shape.
     shape = (args.total_users, args.total_items)
     train = load_interactions(args.train, shape=shape).ratings
     test = load_interactions(args.test, shape=shape).ratings
@@ -45,6 +47,7 @@ def run_final_test(args: argparse.Namespace) -> dict[str, float]:
     if not relevant:
         raise ValueError("No test user has a relevant item")
 
+    # Step 3: fit once, evaluate once, and persist the final comparison evidence.
     started = time.perf_counter()
     model = MatrixFactorization(config).fit(train)
     fit_seconds = time.perf_counter() - started
@@ -60,12 +63,12 @@ def run_final_test(args: argparse.Namespace) -> dict[str, float]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--train", type=Path, default=Path("data/experiment_v4/train.csv"))
-    parser.add_argument("--test", type=Path, default=Path("data/experiment_v4/test.csv"))
+    parser.add_argument("--train", type=Path, default=Path("data/experiment/train.csv"))
+    parser.add_argument("--test", type=Path, default=Path("data/experiment/test.csv"))
     parser.add_argument("--best-config", type=Path,
-                        default=Path("reports/v4/matrix_factorization/best_mf.json"))
+                        default=Path("reports/matrix_factorization/best_mf.json"))
     parser.add_argument("--output-dir", type=Path,
-                        default=Path("reports/v4/matrix_factorization"))
+                        default=Path("reports/matrix_factorization"))
     parser.add_argument("--total-users", type=int, default=20_000)
     parser.add_argument("--total-items", type=int, default=2_000)
     parser.add_argument("--top-k", type=int, default=10, choices=(10,))

@@ -138,10 +138,10 @@ def recommend_unseen_games(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--train", type=Path, default=Path("data/processed/v4/train.csv")
+        "--train", type=Path, default=Path("data/processed/train.csv")
     )
     parser.add_argument(
-        "--games", type=Path, default=Path("data/processed/v4/games.csv")
+        "--games", type=Path, default=Path("data/processed/games.csv")
     )
     parser.add_argument("--output-dir", type=Path, default=Path("reports/baseline"))
     parser.add_argument("--prior-quantile", type=float, default=0.75)

@@ -1,4 +1,4 @@
-"""Tune ItemCF on the 20,000-user v4 experiment dataset."""
+"""Tune ItemCF on the 20,000-user experiment dataset."""
 
 from __future__ import annotations
 
@@ -452,6 +452,7 @@ reason to inspect the test set. {next_step}
 def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
     if not 0 < args.sample_users <= args.total_users:
         raise ValueError("sample_users must be between 1 and total_users")
+    # Step 1: load the deterministic user cohort from train and validation only.
     sampled_users = sample_user_ids(args.total_users, args.sample_users, args.seed)
     shape = (args.total_users, args.total_items)
     print(f"Loading {args.sample_users:,} sampled users from complete CSV files...")
@@ -461,6 +462,7 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
     if not relevant:
         raise ValueError("No sampled validation user has a relevant item; increase sample size")
 
+    # Step 2: evaluate the Bayesian control under the same candidate protocol.
     rows: list[dict[str, object]] = [
         bayesian_popularity_result(
             train, validation, relevant, validation_users, args.top_k
@@ -470,6 +472,7 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
     for field in asdict(ItemCFConfig()):
         rows[0][field] = ""
 
+    # Step 3: run the balanced similarity search and record every validation trial.
     configs = build_trial_configs(args.trials, args.seed, args.sample_users, args.total_users)
 
     def run_config(trial: int, stage: str, config: ItemCFConfig) -> None:
@@ -495,6 +498,7 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
     for trial, config in enumerate(configs):
         run_config(trial, "random", config)
 
+    # Step 4: refine the random-search winner with a small local parameter grid.
     random_winner_row = max(
         (row for row in rows if row.get("stage") == "random"),
         key=lambda row: (float(row["ndcg_at_10"]), float(row["recall_at_10"]), float(row["coverage"])),
@@ -511,6 +515,7 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
     for offset, config in enumerate(refinements, start=len(configs)):
         run_config(offset, "grid", config)
 
+    # Step 5: normalize the result schema and persist the frozen validation winner.
     # Dict insertion differs for the first baseline row; normalize order here.
     ordered_fields = [
         "trial", "stage", "model", *asdict(ItemCFConfig()).keys(), "rmse", "recall_at_10",
@@ -528,11 +533,11 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--train", type=Path, default=Path("data/experiment_v4/train.csv"))
+    parser.add_argument("--train", type=Path, default=Path("data/experiment/train.csv"))
     parser.add_argument(
-        "--validation", type=Path, default=Path("data/experiment_v4/validation.csv")
+        "--validation", type=Path, default=Path("data/experiment/validation.csv")
     )
-    parser.add_argument("--output-dir", type=Path, default=Path("reports/v4/item_cf"))
+    parser.add_argument("--output-dir", type=Path, default=Path("reports/item_cf"))
     parser.add_argument("--total-users", type=int, default=20_000)
     parser.add_argument("--total-items", type=int, default=2_000)
     parser.add_argument("--sample-users", type=int, default=20_000)

@@ -4,7 +4,7 @@ This machine learning project builds personalized board game recommendations fro
 
 ## Dataset Selection
 
-This project now uses the **2025 v4 snapshot** of
+This project uses the **2025 snapshot** of
 `jvanelteren/boardgamegeek-reviews`.
 
 - 26,200,012 raw user-game ratings
@@ -12,9 +12,9 @@ This project now uses the **2025 v4 snapshot** of
 - Metadata including player count, playtime, complexity, categories, and mechanics
 - Suitable for comparing collaborative filtering and content-based recommendation on the same dataset
 
-The v4 archive is pinned by dataset version and checksum. Older v3 data was
-removed after the v4 outputs were verified; all current preprocessing and model
-results use v4 only. The official BGG rank CSV contains only aggregated
+The archive is pinned by dataset version and checksum. Older data was removed
+after the current outputs were verified; all preprocessing and model results
+use the 2025 snapshot only. The official BGG rank CSV contains only aggregated
 game-level scores and cannot replace the user-game interactions required for
 personalized recommendations.
 
@@ -22,7 +22,7 @@ The original source is the [BoardGameGeek XML API](https://boardgamegeek.com/wik
 
 ## Preprocessing
 
-The raw v4 dataset contains **26,200,012 ratings**. Preprocessing resolves
+The raw dataset contains **26,200,012 ratings**. Preprocessing resolves
 duplicate/conflicting user-game pairs on disk, joins the 2025 metadata, and
 builds a deterministic common evaluation cohort.
 
@@ -41,8 +41,8 @@ The final processed dataset contains **248,457 users, 3,000 games, and
 
 ```bash
 .venv/bin/python -m src.data.download --dataset-version 4
-unzip -j data/raw/v4/boardgamegeek-reviews-v4.zip \
-  bgg-26m-reviews.csv games_detailed_info2025.csv -d data/raw/v4
+unzip -j data/raw/boardgamegeek-reviews.zip \
+  bgg-26m-reviews.csv games_detailed_info2025.csv -d data/raw
 .venv/bin/python -m src.data.preprocess
 ```
 
@@ -56,17 +56,17 @@ leakage:
 - users with at least 20 training ratings inside that catalog
 - 20,000 users sampled proportionally from activity groups `20-39`, `40-79`,
   and `80+`
-- compact zero-based IDs written separately under `data/experiment_v4/`
+- compact zero-based IDs written separately under `data/experiment/`
 
 ```bash
 .venv/bin/python -m src.data.create_experiment_subset \
-  --processed-dir data/processed/v4 \
-  --output-dir data/experiment_v4 \
+  --processed-dir data/processed \
+  --output-dir data/experiment \
   --max-items 2000 --max-users 20000 \
   --min-user-train-ratings 20 --seed 42
 ```
 
-The generated v4 subset contains **2,029,222 interactions**: 1,599,055 train,
+The generated experiment subset contains **2,029,222 interactions**: 1,599,055 train,
 215,504 validation, and 214,663 test interactions. It has 20,000 evaluation
 users, 2,000 games, and 94.93% matrix sparsity. Generated CSV files remain
 excluded from Git; the selection code, report schema, and reproduction command
@@ -82,18 +82,19 @@ are versioned.
 data/                     Local datasets (excluded from Git)
 reports/                  Model reports, metrics, and figures
 src/data/                 Download, preprocessing, loading, and EDA
-src/models/               Popularity, ItemCF, and Matrix Factorization
+src/models/               Popularity, ItemCF, Matrix Factorization, and content models
 src/experiments/          Search, evaluation, outputs, and final tests
 src/metrics.py            Metrics shared by every model
 tests/                    Regression and model tests
 ```
 
-## Modeling Roadmap
+## Implemented Models
 
-1. Use popularity-based recommendations as the baseline.
-2. Implement collaborative filtering with Surprise SVD or implicit ALS.
-3. Implement content-based recommendations using game categories, mechanics, and complexity.
-4. Compare models using RMSE, Recall@10, NDCG@10, and coverage.
+1. Bayesian popularity baseline using training ratings only.
+2. Item-item collaborative filtering with four similarity definitions.
+3. Matrix Factorization trained with mini-batch gradient descent.
+4. Content-based recommendations using description TF-IDF, categories, and mechanics.
+5. Common comparison using RMSE, Recall@10, NDCG@10, and coverage.
 
 ## Item-Item Collaborative Filtering Experiment
 
@@ -102,7 +103,7 @@ lecture: cosine, adjusted cosine, Pearson-style correlation, and Jaccard
 similarity. It also includes a Bayesian popularity control.
 
 ```bash
-# Tune on the 20,000-user v4 train/validation data. Test remains untouched.
+# Tune on the 20,000-user train/validation data. Test remains untouched.
 .venv/bin/python -m src.experiments.item_cf_experiment
 
 # Run only after freezing the validation winner. This evaluates the held-out
@@ -115,7 +116,7 @@ winner with a small local grid over neighboring K, minimum-support, and
 shrinkage values. The search chooses the highest validation NDCG@10, with Recall@10 and catalog
 coverage as secondary criteria. RMSE is reported separately because a model can
 predict ratings accurately without placing the right unseen games near the top.
-The checked-in v4 experiment evaluates all 20,000 selected users.
+The checked-in experiment evaluates all 20,000 selected users.
 
 Concepts beyond the basic lecture formula are commented directly in the code:
 
@@ -146,9 +147,9 @@ the best validation NDCG@10 overall, while adjusted cosine has the lowest RMSE.
 This disagreement illustrates why rating error alone is not sufficient for
 evaluating Top-10 recommendation quality.
 
-![Best validation ranking metrics](reports/v4/item_cf/ranking_metrics.png)
+![Best validation ranking metrics](reports/item_cf/ranking_metrics.png)
 
-![Hyperparameter effects](reports/v4/item_cf/hyperparameter_effects.png)
+![Hyperparameter effects](reports/item_cf/hyperparameter_effects.png)
 
 ### Final held-out test result
 
@@ -164,9 +165,9 @@ The test result remains close to validation: RMSE improved slightly, while
 Recall@10 and NDCG@10 decreased slightly. The small gaps indicate that the
 selected configuration generalizes stably to unseen interactions rather than
 depending on a lucky validation split. The final report is stored in
-`reports/v4/item_cf/final_test_summary.md`.
+`reports/item_cf/final_test_summary.md`.
 
-![Validation and final test comparison](reports/v4/item_cf/validation_vs_test.png)
+![Validation and final test comparison](reports/item_cf/validation_vs_test.png)
 
 ## Matrix Factorization Experiment
 
@@ -187,4 +188,25 @@ regularization, and epochs. The winner is selected by validation NDCG@10, with
 Recall@10 and RMSE as tie breakers. The frozen 32-factor, learning-rate 0.02,
 regularization 0.01, 18-epoch winner achieved validation/test NDCG@10 of
 0.0201/0.0197 and RMSE of 1.2518/1.2512. Reproducible outputs are written to
-`reports/v4/matrix_factorization/`.
+`reports/matrix_factorization/`.
+
+## Content-Based Experiment
+
+The third personalized model represents each game with description TF-IDF and
+category/mechanic tags. A user's profile is the normalized weighted average of
+games rated at least 8, and cosine similarity ranks unseen games.
+
+```bash
+# Compare description vocabulary size and description/tag weights on validation.
+.venv/bin/python -m src.experiments.content_based_experiment --mode tune
+
+# Evaluate the frozen winner once and export each user's Top-100 content scores.
+.venv/bin/python -m src.experiments.content_based_experiment --mode final
+```
+
+The validation winner uses 4,000 description terms, 271 tag features, and equal
+description/tag weight. It achieved validation/test NDCG@10 of 0.0349/0.0352,
+Recall@10 of 0.0431/0.0438, RMSE of 1.3291/1.3258, and Coverage of 0.8155 on
+both splits. The compact handoff file contains the Top 100 scored unseen games
+per user at `data/experiment/content_scores.csv`; reproducible reports are in
+`reports/content_based/`.

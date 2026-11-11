@@ -1,0 +1,18 @@
+{
+  "trial": 4,
+  "max_description_features": 4000,
+  "min_document_frequency": 2,
+  "description_weight": 0.5,
+  "liked_threshold": 8.0,
+  "rating_scale": 2.0,
+  "description_features": 4000,
+  "tag_features": 271,
+  "rmse": 1.3291088141413485,
+  "recall_at_10": 0.04305747749925779,
+  "ndcg_at_10": 0.03486999723169345,
+  "coverage": 0.8155,
+  "rating_predictions": 215504.0,
+  "ranking_users": 20000.0,
+  "fit_seconds": 0.7192482501268387,
+  "evaluation_seconds": 4.782574249897152
+}

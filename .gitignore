@@ -8,12 +8,11 @@ __pycache__/
 # Large, reproducible artifacts
 data/raw/*
 data/processed/*
-data/experiment_v4/*
+data/experiment/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
-!data/experiment_v4/.gitkeep
+!data/experiment/.gitkeep
 
-# Temporary legacy ItemCF runs; current v4 reports remain versioned.
-reports/item_cf/
+# Temporary ItemCF smoke runs.
 reports/item_cf_smoke/
 

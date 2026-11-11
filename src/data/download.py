@@ -59,7 +59,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("data/raw/v4/boardgamegeek-reviews-v4.zip"),
+        default=Path("data/raw/boardgamegeek-reviews.zip"),
     )
     parser.add_argument("--dataset-version", type=int, default=4, choices=sorted(EXPECTED_MD5))
     parser.add_argument("--force", action="store_true")

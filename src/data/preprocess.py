@@ -1,4 +1,4 @@
-"""Leakage-safe preprocessing for the 2025 BoardGameGeek Reviews v4 data.
+"""Leakage-safe preprocessing for the 2025 BoardGameGeek Reviews data.
 
 The raw review file is larger than memory, so duplicate and conflicting ratings
 are resolved in a temporary SQLite database.  Catalog selection uses provisional
@@ -77,7 +77,7 @@ def sha256sum(path: Path) -> str:
     return digest.hexdigest()
 
 
-def locate_v4_files(raw_dir: Path) -> tuple[Path, Path]:
+def locate_source_files(raw_dir: Path) -> tuple[Path, Path]:
     ratings = sorted(raw_dir.glob("bgg-*-reviews.csv"))
     metadata = sorted(raw_dir.glob("games_detailed_info*.csv"))
     if not ratings:
@@ -539,16 +539,22 @@ def preprocess(
     keep_database: bool = False,
 ) -> dict[str, object]:
     started = time.perf_counter()
-    ratings_path, metadata_path = locate_v4_files(raw_dir)
+
+    # Step 1: resolve the two source CSVs and prepare disk-backed work storage.
+    ratings_path, metadata_path = locate_source_files(raw_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     work_dir = work_dir or output_dir / ".work"
     work_dir.mkdir(parents=True, exist_ok=True)
     database_path = work_dir / "dedup.sqlite3"
 
+    # Step 2: validate and deduplicate the large rating file without loading it
+    # all into memory, then load the much smaller game metadata table.
     ingest_started = time.perf_counter()
     cleaning = ingest_ratings(ratings_path, database_path)
     ingest_seconds = time.perf_counter() - ingest_started
     metadata, missing_metadata_fields = load_metadata(metadata_path)
+    # Step 3: select games and users using provisional train-only counts so
+    # validation and test information cannot influence the experiment cohort.
     selected_items, item_train_counts, catalog_stats = select_catalog(
         database_path,
         set(metadata),
@@ -562,6 +568,8 @@ def preprocess(
         min_user_train_ratings=min_user_train_ratings,
         seed=seed,
     )
+    # Step 4: create stable IDs, repair per-user splits, and write every model's
+    # common train/validation/test files plus the shared evaluation cohort.
     outputs = write_outputs(
         database_path,
         output_dir,
@@ -585,6 +593,7 @@ def preprocess(
             "eval_users.csv",
         )
     ]
+    # Step 5: persist counts, rules, timings, and checksums for reproducibility.
     report: dict[str, object] = {
         "dataset_version": 4,
         "ratings_source": str(ratings_path),
@@ -611,6 +620,7 @@ def preprocess(
     (output_dir / "preprocessing_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    # Step 6: remove only the reproducible SQLite work directory by default.
     if not keep_database:
         shutil.rmtree(work_dir)
     return report
@@ -618,8 +628,8 @@ def preprocess(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--raw-dir", type=Path, default=Path("data/raw/v4"))
-    parser.add_argument("--output-dir", type=Path, default=Path("data/processed/v4"))
+    parser.add_argument("--raw-dir", type=Path, default=Path("data/raw"))
+    parser.add_argument("--output-dir", type=Path, default=Path("data/processed"))
     parser.add_argument("--work-dir", type=Path)
     parser.add_argument("--min-user-train-ratings", type=int, default=10)
     parser.add_argument("--min-item-train-ratings", type=int, default=100)

@@ -252,18 +252,22 @@ def create_experiment_subset(
         if not path.exists():
             raise FileNotFoundError(path)
 
+    # Step 1: rank games using train counts only and keep the requested catalog.
     item_counts = count_train_items(train_path)
     ranked_items = sorted(item_counts, key=lambda item: (-item_counts[item], item))
     selected_items = ranked_items[:max_items]
     if len(selected_items) < max_items:
         raise ValueError(f"Only {len(selected_items)} training items are available")
 
+    # Step 2: find sufficiently active users inside that selected catalog.
     train_user_counts = count_train_users(train_path, set(selected_items))
     eligible = {
         user_id: count
         for user_id, count in train_user_counts.items()
         if count >= min_user_train_ratings
     }
+    # Step 3: require an evaluable liked game in every split when the source
+    # preprocessing run provides a common evaluation cohort.
     source_eval_users = load_eval_users(processed_dir / "eval_users.csv")
     relevant_counts: dict[str, Counter[int]] | None = None
     if source_eval_users is not None:
@@ -277,9 +281,11 @@ def create_experiment_subset(
             if user_id in candidates
             and all(relevant_counts[split][user_id] > 0 for split in relevant_counts)
         }
+    # Step 4: preserve light, medium, and heavy user proportions while sampling.
     selected_users, strata = stratified_user_sample(eligible, max_users, seed)
 
-    # Item IDs follow training popularity rank; user IDs follow source ID order.
+    # Step 5: remap IDs and write filtered splits plus metadata. Item IDs follow
+    # training popularity rank; user IDs follow source ID order.
     item_mapping = {old_id: new_id for new_id, old_id in enumerate(selected_items)}
     user_mapping = {old_id: new_id for new_id, old_id in enumerate(selected_users)}
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -298,6 +304,7 @@ def create_experiment_subset(
         output_dir / "eval_users.csv", selected_users, user_mapping, relevant_counts
     )
 
+    # Step 6: record the exact cohort, split sizes, and matrix sparsity.
     report: dict[str, object] = {
         "selection_source": "train split only",
         "source_processed_dir": str(processed_dir),
@@ -323,10 +330,10 @@ def create_experiment_subset(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--processed-dir", type=Path, default=Path("data/processed/v4")
+        "--processed-dir", type=Path, default=Path("data/processed")
     )
     parser.add_argument(
-        "--output-dir", type=Path, default=Path("data/experiment_v4")
+        "--output-dir", type=Path, default=Path("data/experiment")
     )
     parser.add_argument("--max-items", type=int, default=2_000)
     parser.add_argument("--max-users", type=int, default=20_000)

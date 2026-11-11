@@ -147,7 +147,7 @@ def save_plots(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--processed-dir", type=Path, default=Path("data/processed/v4")
+        "--processed-dir", type=Path, default=Path("data/processed")
     )
     parser.add_argument("--output-dir", type=Path, default=Path("reports/eda"))
     args = parser.parse_args()
