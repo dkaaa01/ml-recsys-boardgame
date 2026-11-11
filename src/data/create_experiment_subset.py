@@ -38,6 +38,41 @@ def count_train_users(train_path: Path, selected_items: set[int]) -> Counter[int
     return counts
 
 
+def load_eval_users(path: Path) -> set[int] | None:
+    """Load the common ranking cohort when the processed dataset provides one."""
+
+    if not path.exists():
+        return None
+    with path.open("r", encoding="utf-8", newline="") as source:
+        return {int(row["user_id"]) for row in csv.DictReader(source)}
+
+
+def count_relevant_by_split(
+    processed_dir: Path,
+    selected_items: set[int],
+    users: set[int],
+    threshold: float,
+) -> dict[str, Counter[int]]:
+    """Count held-out relevant games inside the selected catalog."""
+
+    result: dict[str, Counter[int]] = {}
+    for split in ("train", "validation", "test"):
+        counts: Counter[int] = Counter()
+        with (processed_dir / f"{split}.csv").open(
+            "r", encoding="utf-8", newline=""
+        ) as source:
+            for row in csv.DictReader(source):
+                user_id = int(row["user_id"])
+                if (
+                    user_id in users
+                    and int(row["item_id"]) in selected_items
+                    and float(row["rating"]) >= threshold
+                ):
+                    counts[user_id] += 1
+        result[split] = counts
+    return result
+
+
 def activity_bin(rating_count: int) -> str:
     """Group users by activity so sampling does not retain only heavy users."""
 
@@ -168,6 +203,35 @@ def write_users(
             writer.writerow((user_mapping[old_user], old_user, count, activity_bin(count)))
 
 
+def write_eval_users(
+    output_path: Path,
+    selected_users: list[int],
+    user_mapping: dict[int, int],
+    relevant_counts: dict[str, Counter[int]] | None,
+) -> None:
+    if relevant_counts is None:
+        return
+    with output_path.open("w", encoding="utf-8", newline="") as output:
+        writer = csv.writer(output)
+        writer.writerow(
+            (
+                "user_id",
+                "train_relevant_count",
+                "validation_relevant_count",
+                "test_relevant_count",
+            )
+        )
+        for old_user in selected_users:
+            writer.writerow(
+                (
+                    user_mapping[old_user],
+                    relevant_counts["train"][old_user],
+                    relevant_counts["validation"][old_user],
+                    relevant_counts["test"][old_user],
+                )
+            )
+
+
 def create_experiment_subset(
     processed_dir: Path,
     output_dir: Path,
@@ -175,6 +239,7 @@ def create_experiment_subset(
     max_items: int = 1_500,
     max_users: int = 10_000,
     min_user_train_ratings: int = 20,
+    relevant_threshold: float = 8.0,
     seed: int = 42,
 ) -> dict[str, object]:
     """Create filtered splits, compact mappings, metadata, and a JSON report."""
@@ -199,6 +264,19 @@ def create_experiment_subset(
         for user_id, count in train_user_counts.items()
         if count >= min_user_train_ratings
     }
+    source_eval_users = load_eval_users(processed_dir / "eval_users.csv")
+    relevant_counts: dict[str, Counter[int]] | None = None
+    if source_eval_users is not None:
+        candidates = set(eligible).intersection(source_eval_users)
+        relevant_counts = count_relevant_by_split(
+            processed_dir, set(selected_items), candidates, relevant_threshold
+        )
+        eligible = {
+            user_id: count
+            for user_id, count in eligible.items()
+            if user_id in candidates
+            and all(relevant_counts[split][user_id] > 0 for split in relevant_counts)
+        }
     selected_users, strata = stratified_user_sample(eligible, max_users, seed)
 
     # Item IDs follow training popularity rank; user IDs follow source ID order.
@@ -216,6 +294,9 @@ def create_experiment_subset(
     }
     metadata_rows = write_games(games_path, output_dir / "games.csv", item_mapping)
     write_users(output_dir / "users.csv", selected_users, user_mapping, train_user_counts)
+    write_eval_users(
+        output_dir / "eval_users.csv", selected_users, user_mapping, relevant_counts
+    )
 
     report: dict[str, object] = {
         "selection_source": "train split only",
@@ -223,6 +304,8 @@ def create_experiment_subset(
         "users": len(selected_users),
         "items": len(selected_items),
         "min_user_train_ratings": min_user_train_ratings,
+        "relevant_threshold": relevant_threshold,
+        "evaluation_users": len(selected_users) if relevant_counts is not None else None,
         "seed": seed,
         "eligible_users": len(eligible),
         "activity_strata": strata,
@@ -239,11 +322,16 @@ def create_experiment_subset(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--processed-dir", type=Path, default=Path("data/processed"))
-    parser.add_argument("--output-dir", type=Path, default=Path("data/experiment_10k"))
-    parser.add_argument("--max-items", type=int, default=1_500)
-    parser.add_argument("--max-users", type=int, default=10_000)
+    parser.add_argument(
+        "--processed-dir", type=Path, default=Path("data/processed/v4")
+    )
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("data/experiment_v4")
+    )
+    parser.add_argument("--max-items", type=int, default=2_000)
+    parser.add_argument("--max-users", type=int, default=20_000)
     parser.add_argument("--min-user-train-ratings", type=int, default=20)
+    parser.add_argument("--relevant-threshold", type=float, default=8.0)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     report = create_experiment_subset(
@@ -252,6 +340,7 @@ def main() -> None:
         max_items=args.max_items,
         max_users=args.max_users,
         min_user_train_ratings=args.min_user_train_ratings,
+        relevant_threshold=args.relevant_threshold,
         seed=args.seed,
     )
     print(json.dumps(report, indent=2))

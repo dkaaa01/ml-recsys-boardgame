@@ -1,13 +1,13 @@
 {
   "split_counts": {
-    "train": 12041456,
-    "validation": 1503565,
-    "test": 1505894
+    "train": 15473315,
+    "validation": 2138126,
+    "test": 2134472
   },
-  "users": 212439,
+  "users": 248457,
   "items": 3000,
-  "interactions": 15050915,
-  "matrix_sparsity": 0.9763839423709081,
-  "average_ratings_per_user": 70.84817288727588,
-  "average_ratings_per_game": 5016.971666666666
+  "interactions": 19745913,
+  "matrix_sparsity": 0.9735086111480055,
+  "average_ratings_per_user": 79.47416655598353,
+  "average_ratings_per_game": 6581.971
 }
