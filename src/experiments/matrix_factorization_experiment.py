@@ -10,10 +10,10 @@ from pathlib import Path
 
 import numpy as np
 
-from src.data import load_interactions, sample_user_ids
-from src.matrix_factorization import MatrixFactorization, MatrixFactorizationConfig
-from src.matrix_factorization_evaluation import evaluate, find_relevant_items
-from src.matrix_factorization_outputs import save_search_outputs
+from src.data.loader import load_interactions, sample_user_ids
+from src.experiments.matrix_factorization_evaluation import evaluate, find_relevant_items
+from src.experiments.matrix_factorization_outputs import save_search_outputs
+from src.models.matrix_factorization import MatrixFactorization, MatrixFactorizationConfig
 
 
 def build_trial_configs(trials: int, seed: int) -> list[MatrixFactorizationConfig]:

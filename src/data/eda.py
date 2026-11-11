@@ -16,7 +16,7 @@ os.environ.setdefault("XDG_CACHE_HOME", str(Path(".cache").resolve()))
 
 import matplotlib.pyplot as plt
 
-from src.popularity import rank_popular_games
+from src.models.popularity import rank_popular_games
 
 
 def to_float(value: str) -> float | None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from src.matrix_factorization_experiment import build_trial_configs
+from src.experiments.matrix_factorization_experiment import build_trial_configs
 
 
 class MatrixFactorizationExperimentTest(unittest.TestCase):

@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.matrix_factorization import MatrixFactorizationConfig
-from src.matrix_factorization_outputs import save_final_outputs, save_search_outputs
+from src.experiments.matrix_factorization_outputs import save_final_outputs, save_search_outputs
+from src.models.matrix_factorization import MatrixFactorizationConfig
 
 
 class MatrixFactorizationOutputsTest(unittest.TestCase):

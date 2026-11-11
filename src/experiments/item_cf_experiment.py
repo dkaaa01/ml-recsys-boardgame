@@ -19,8 +19,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Patch
 
-from src.data import load_interactions, sample_user_ids
-from src.item_cf import ItemCFConfig, ItemItemCF
+from src.data.loader import load_interactions, sample_user_ids
+from src.models.item_cf import ItemCFConfig, ItemItemCF
 from src.metrics import (
     catalog_coverage,
     ndcg_at_k,

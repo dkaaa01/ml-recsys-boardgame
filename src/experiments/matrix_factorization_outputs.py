@@ -10,7 +10,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from src.matrix_factorization import MatrixFactorizationConfig
+from src.models.matrix_factorization import MatrixFactorizationConfig
 
 
 def save_search_outputs(

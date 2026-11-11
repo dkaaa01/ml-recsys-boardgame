@@ -7,10 +7,10 @@ import json
 import time
 from pathlib import Path
 
-from src.data import load_interactions
-from src.matrix_factorization import MatrixFactorization, MatrixFactorizationConfig
-from src.matrix_factorization_evaluation import evaluate, find_relevant_items
-from src.matrix_factorization_outputs import save_final_outputs
+from src.data.loader import load_interactions
+from src.experiments.matrix_factorization_evaluation import evaluate, find_relevant_items
+from src.experiments.matrix_factorization_outputs import save_final_outputs
+from src.models.matrix_factorization import MatrixFactorization, MatrixFactorizationConfig
 
 
 def load_frozen_config(path: Path) -> tuple[MatrixFactorizationConfig, dict[str, float]]:

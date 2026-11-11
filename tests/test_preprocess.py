@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.preprocess import preprocess, stable_split
+from src.data.preprocess import preprocess, stable_split
 
 
 class PreprocessTest(unittest.TestCase):

@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 from scipy import sparse
 
-from src.matrix_factorization import MatrixFactorization, MatrixFactorizationConfig
+from src.models.matrix_factorization import MatrixFactorization, MatrixFactorizationConfig
 
 
 class MatrixFactorizationTest(unittest.TestCase):

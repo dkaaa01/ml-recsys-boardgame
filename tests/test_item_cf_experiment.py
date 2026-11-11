@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from src.item_cf import ItemCFConfig
-from src.item_cf_experiment import build_local_grid, build_trial_configs
+from src.experiments.item_cf_experiment import build_local_grid, build_trial_configs
+from src.models.item_cf import ItemCFConfig
 
 
 class ItemCFExperimentTest(unittest.TestCase):

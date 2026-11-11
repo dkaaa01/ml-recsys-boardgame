@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.matrix_factorization import MatrixFactorization
+from src.models.matrix_factorization import MatrixFactorization
 from src.metrics import catalog_coverage, ndcg_at_k, recall_at_k, rmse, validate_recommendations
 
 

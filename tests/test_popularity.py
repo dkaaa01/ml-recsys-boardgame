@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.popularity import rank_popular_games, recommend_unseen_games
+from src.models.popularity import rank_popular_games, recommend_unseen_games
 
 
 class PopularityTest(unittest.TestCase):

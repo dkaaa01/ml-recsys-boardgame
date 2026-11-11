@@ -43,7 +43,7 @@ leakage:
 - compact zero-based IDs written separately under `data/experiment_10k/`
 
 ```bash
-.venv/bin/python -m src.create_experiment_subset \
+.venv/bin/python -m src.data.create_experiment_subset \
   --max-items 1500 --max-users 10000 \
   --min-user-train-ratings 20 --seed 42
 ```
@@ -60,13 +60,13 @@ selection code, report schema, and reproduction command are versioned.
 ## Project Structure
 
 ```text
-data/raw/        Original ZIP and CSV files (excluded from Git)
-data/processed/  Cleaned and split datasets (excluded from Git)
-data/experiment_10k/  Reproducible assignment subset (excluded from Git)
-notebooks/       Exploratory analysis and model experiments
-reports/         Project reports and figures
-src/             Download and preprocessing code
-tests/           Preprocessing regression tests
+data/                     Local datasets (excluded from Git)
+reports/                  Model reports, metrics, and figures
+src/data/                 Download, preprocessing, loading, and EDA
+src/models/               Popularity, ItemCF, and Matrix Factorization
+src/experiments/          Search, evaluation, outputs, and final tests
+src/metrics.py            Metrics shared by every model
+tests/                    Regression and model tests
 ```
 
 ## Modeling Roadmap
@@ -85,11 +85,11 @@ similarity. It also includes a Bayesian popularity control.
 ```bash
 # Fast, reproducible smoke experiment. It scans the full CSV files but retains
 # only a seeded sample of users, then writes CSV/JSON results and PNG plots.
-.venv/bin/python -m src.item_cf_experiment \
+.venv/bin/python -m src.experiments.item_cf_experiment \
   --sample-users 2000 --trials 8 --grid-trials 6
 
 # Main assignment experiment on the reduced dataset. Test remains untouched.
-.venv/bin/python -m src.item_cf_experiment \
+.venv/bin/python -m src.experiments.item_cf_experiment \
   --train data/experiment_10k/train.csv \
   --validation data/experiment_10k/validation.csv \
   --total-users 10000 --total-items 1500 --sample-users 10000 \
@@ -98,7 +98,7 @@ similarity. It also includes a Bayesian popularity control.
 
 # Run only after freezing the validation winner. This evaluates the held-out
 # test split without performing any additional parameter search.
-.venv/bin/python -m src.final_item_cf_test
+.venv/bin/python -m src.experiments.final_item_cf_test
 ```
 
 The experiment first performs a seeded random search, then refines the random
@@ -167,10 +167,10 @@ tendencies; the embedding dot product captures the remaining preference match.
 
 ```bash
 # Tune only on train + validation. The test file is not accepted here.
-.venv/bin/python -m src.matrix_factorization_experiment
+.venv/bin/python -m src.experiments.matrix_factorization_experiment
 
 # Evaluate the frozen validation winner once on held-out test data.
-.venv/bin/python -m src.final_matrix_factorization_test
+.venv/bin/python -m src.experiments.final_matrix_factorization_test
 ```
 
 The deterministic random search compares latent factors, learning rate,

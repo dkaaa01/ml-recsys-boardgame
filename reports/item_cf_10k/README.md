@@ -76,14 +76,14 @@ NDCG@10은 보정 코사인이 가장 높았다.
 ## 6. 재현 방법
 
 ```bash
-.venv/bin/python -m src.item_cf_experiment \
+.venv/bin/python -m src.experiments.item_cf_experiment \
   --train data/experiment_10k/train.csv \
   --validation data/experiment_10k/validation.csv \
   --total-users 10000 --total-items 1500 --sample-users 10000 \
   --trials 16 --grid-trials 8 \
   --output-dir reports/item_cf_10k
 
-.venv/bin/python -m src.final_item_cf_test
+.venv/bin/python -m src.experiments.final_item_cf_test
 ```
 
 주요 결과 파일:

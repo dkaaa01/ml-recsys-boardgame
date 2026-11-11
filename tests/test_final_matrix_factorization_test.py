@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.final_matrix_factorization_test import load_frozen_config
+from src.experiments.final_matrix_factorization_test import load_frozen_config
 
 
 class FinalMatrixFactorizationTest(unittest.TestCase):

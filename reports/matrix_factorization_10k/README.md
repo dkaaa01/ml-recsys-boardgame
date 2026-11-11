@@ -59,8 +59,8 @@ Recall@10과 NDCG@10은 낮았다.
 ## 5. 재현 방법
 
 ```bash
-.venv/bin/python -m src.matrix_factorization_experiment
-.venv/bin/python -m src.final_matrix_factorization_test
+.venv/bin/python -m src.experiments.matrix_factorization_experiment
+.venv/bin/python -m src.experiments.final_matrix_factorization_test
 ```
 
 주요 결과 파일:

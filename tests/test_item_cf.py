@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 from scipy import sparse
 
-from src.item_cf import ItemCFConfig, ItemItemCF
+from src.models.item_cf import ItemCFConfig, ItemItemCF
 
 
 class ItemItemCFTest(unittest.TestCase):

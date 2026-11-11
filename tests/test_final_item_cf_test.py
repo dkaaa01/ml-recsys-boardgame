@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.final_item_cf_test import load_frozen_config
+from src.experiments.final_item_cf_test import load_frozen_config
 
 
 class FinalItemCFTest(unittest.TestCase):

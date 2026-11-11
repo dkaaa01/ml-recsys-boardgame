@@ -16,9 +16,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from src.data import load_interactions
-from src.item_cf import ItemCFConfig, ItemItemCF
-from src.item_cf_experiment import evaluate_model, validation_targets
+from src.data.loader import load_interactions
+from src.experiments.item_cf_experiment import evaluate_model, validation_targets
+from src.models.item_cf import ItemCFConfig, ItemItemCF
 
 
 def load_frozen_config(path: Path) -> tuple[ItemCFConfig, dict[str, float]]:

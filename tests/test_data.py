@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.data import load_interactions, sample_user_ids
+from src.data.loader import load_interactions, sample_user_ids
 
 
 class DataTest(unittest.TestCase):

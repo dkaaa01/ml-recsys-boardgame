@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.create_experiment_subset import create_experiment_subset
+from src.data.create_experiment_subset import create_experiment_subset
 
 
 class CreateExperimentSubsetTest(unittest.TestCase):
