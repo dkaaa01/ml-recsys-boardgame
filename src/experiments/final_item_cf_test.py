@@ -9,9 +9,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from dataclasses import asdict
 from pathlib import Path
+
+# Keep Matplotlib and font caches inside the project workspace.
+os.environ.setdefault("MPLCONFIGDIR", str(Path(".cache/matplotlib").resolve()))
+os.environ.setdefault("XDG_CACHE_HOME", str(Path(".cache").resolve()))
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -151,16 +156,16 @@ def run_final_test(args: argparse.Namespace) -> dict[str, float]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--train", type=Path, default=Path("data/experiment_10k/train.csv"))
-    parser.add_argument("--test", type=Path, default=Path("data/experiment_10k/test.csv"))
+    parser.add_argument("--train", type=Path, default=Path("data/experiment_v4/train.csv"))
+    parser.add_argument("--test", type=Path, default=Path("data/experiment_v4/test.csv"))
     parser.add_argument(
         "--best-config",
         type=Path,
-        default=Path("reports/item_cf_10k/best_item_cf.json"),
+        default=Path("reports/v4/item_cf/best_item_cf.json"),
     )
-    parser.add_argument("--output-dir", type=Path, default=Path("reports/item_cf_10k"))
-    parser.add_argument("--total-users", type=int, default=10_000)
-    parser.add_argument("--total-items", type=int, default=1_500)
+    parser.add_argument("--output-dir", type=Path, default=Path("reports/v4/item_cf"))
+    parser.add_argument("--total-users", type=int, default=20_000)
+    parser.add_argument("--total-items", type=int, default=2_000)
     parser.add_argument("--top-k", type=int, default=10, choices=(10,))
     parser.add_argument("--relevant-threshold", type=float, default=8.0)
     args = parser.parse_args()

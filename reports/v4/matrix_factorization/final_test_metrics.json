@@ -1,0 +1,29 @@
+{
+  "protocol": "frozen validation winner evaluated once on held-out test data",
+  "config": {
+    "factors": 32,
+    "learning_rate": 0.02,
+    "regularization": 0.01,
+    "epochs": 18,
+    "batch_size": 4096,
+    "seed": 42,
+    "min_rating": 1.0,
+    "max_rating": 10.0
+  },
+  "validation": {
+    "rmse": 1.2517797073344448,
+    "recall_at_10": 0.02404517703466088,
+    "ndcg_at_10": 0.020054648119838054,
+    "coverage": 0.806
+  },
+  "test": {
+    "rmse": 1.25124584465137,
+    "recall_at_10": 0.023946373724638984,
+    "ndcg_at_10": 0.019661539291762325,
+    "coverage": 0.806,
+    "rating_predictions": 214663.0,
+    "ranking_users": 20000.0
+  },
+  "fit_seconds": 14.371477415785193,
+  "evaluation_seconds": 2.295182832982391
+}

@@ -1,0 +1,20 @@
+{
+  "trial": 13,
+  "stage": "grid",
+  "model": "item_cf",
+  "similarity": "pearson",
+  "neighbors": 20,
+  "min_overlap": 3,
+  "shrinkage": 0.0,
+  "min_similarity": 0.0,
+  "positive_threshold": 8.0,
+  "scoring": "baseline_residual",
+  "rmse": 1.4858629158494014,
+  "recall_at_10": 0.050455949070351315,
+  "ndcg_at_10": 0.042095379101976,
+  "coverage": 0.986,
+  "fit_seconds": 1.6095138750970364,
+  "evaluation_seconds": 7.516330375336111,
+  "rating_predictions": 215504.0,
+  "ranking_users": 20000.0
+}

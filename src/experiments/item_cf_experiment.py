@@ -1,19 +1,18 @@
-"""Run and visualize a reproducible ItemCF similarity/search experiment.
-
-The default command is a *smoke experiment* on a fixed user sample.  It scans
-the complete interaction files but keeps only the chosen users, which avoids
-the bias that would come from reading only the first N CSV rows (the source file
-is grouped largely by game).  Use ``--sample-users 212439`` for a full run.
-"""
+"""Tune ItemCF on the 20,000-user v4 experiment dataset."""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import json
+import os
 import time
 from dataclasses import asdict
 from pathlib import Path
+
+# Keep Matplotlib and font caches inside the project workspace.
+os.environ.setdefault("MPLCONFIGDIR", str(Path(".cache/matplotlib").resolve()))
+os.environ.setdefault("XDG_CACHE_HOME", str(Path(".cache").resolve()))
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -199,7 +198,9 @@ def evaluate_model(
     return metrics, recommendations
 
 
-def popularity_result(train, validation, relevant, validation_users, top_k: int) -> dict[str, object]:
+def bayesian_popularity_result(
+    train, validation, relevant, validation_users, top_k: int
+) -> dict[str, object]:
     """Evaluate a train-only Bayesian popularity control under the same protocol."""
 
     counts = np.asarray(train.getnnz(axis=0), dtype=float)
@@ -233,7 +234,7 @@ def popularity_result(train, validation, relevant, validation_users, top_k: int)
     return {
         "trial": -1,
         "stage": "baseline",
-        "model": "popularity",
+        "model": "bayesian_popularity",
         "rmse": rmse(actual, predicted),
         "recall_at_10": recall_at_k(recommendations, relevant, top_k),
         "ndcg_at_10": ndcg_at_k(recommendations, relevant, top_k),
@@ -271,7 +272,9 @@ def write_results(
     # comparison: baseline, each family's best trial, and the overall top five.
     plot_rows = rows
     if len(rows) > 20:
-        selected = [next(row for row in rows if row["model"] == "popularity")]
+        selected = [
+            next(row for row in rows if row["model"] == "bayesian_popularity")
+        ]
         selected.extend(
             max(
                 (row for row in candidates if row["similarity"] == similarity),
@@ -301,7 +304,9 @@ def write_results(
         plot_rows = list({int(row["trial"]): row for row in selected}.values())
 
     labels = [
-        "Popularity" if row["model"] == "popularity" else f"T{row['trial']} {row['similarity']}"
+        "Bayesian popularity"
+        if row["model"] == "bayesian_popularity"
+        else f"T{row['trial']} {row['similarity']}"
         for row in plot_rows
     ]
     positions = np.arange(len(plot_rows))
@@ -395,7 +400,7 @@ def write_results(
     figure.savefig(output_dir / "hyperparameter_effects.png", dpi=180, bbox_inches="tight")
     plt.close(figure)
 
-    baseline = next(row for row in rows if row["model"] == "popularity")
+    baseline = next(row for row in rows if row["model"] == "bayesian_popularity")
     comparison = "higher" if float(best["ndcg_at_10"]) > float(baseline["ndcg_at_10"]) else "lower"
     report_name = (
         "ItemCF reduced-dataset validation summary"
@@ -416,7 +421,7 @@ def write_results(
     summary = f"""# {report_name}
 
 {scope_note} The test split was not read. {len(candidates)} ItemCF configurations
-were evaluated in addition to the popularity baseline.
+were evaluated in addition to the Bayesian popularity baseline.
 
 ## Best ItemCF configuration
 
@@ -430,7 +435,7 @@ were evaluated in addition to the popularity baseline.
 - NDCG@10: {float(best['ndcg_at_10']):.4f}
 - Catalog coverage: {float(best['coverage']):.4f}
 
-The best ItemCF NDCG@10 is {comparison} than the popularity control in this
+The best ItemCF NDCG@10 is {comparison} than the Bayesian popularity control in this
 {comparison_scope} ({float(baseline['ndcg_at_10']):.4f}). This is a useful diagnostic, not a
 reason to inspect the test set. {next_step}
 
@@ -445,11 +450,8 @@ reason to inspect the test set. {next_step}
 
 
 def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
-    if args.sample_users > 10_000:
-        raise ValueError(
-            "The current search runner is intentionally capped at 10,000 users. "
-            "Full-data search requires similarity-statistics caching across trials."
-        )
+    if not 0 < args.sample_users <= args.total_users:
+        raise ValueError("sample_users must be between 1 and total_users")
     sampled_users = sample_user_ids(args.total_users, args.sample_users, args.seed)
     shape = (args.total_users, args.total_items)
     print(f"Loading {args.sample_users:,} sampled users from complete CSV files...")
@@ -460,9 +462,11 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
         raise ValueError("No sampled validation user has a relevant item; increase sample size")
 
     rows: list[dict[str, object]] = [
-        popularity_result(train, validation, relevant, validation_users, args.top_k)
+        bayesian_popularity_result(
+            train, validation, relevant, validation_users, args.top_k
+        )
     ]
-    # Keep one rectangular CSV schema even though popularity has no CF options.
+    # Keep one rectangular CSV schema even though the Bayesian baseline has no CF options.
     for field in asdict(ItemCFConfig()):
         rows[0][field] = ""
 
@@ -524,12 +528,14 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--train", type=Path, default=Path("data/processed/train.csv"))
-    parser.add_argument("--validation", type=Path, default=Path("data/processed/validation.csv"))
-    parser.add_argument("--output-dir", type=Path, default=Path("reports/item_cf"))
-    parser.add_argument("--total-users", type=int, default=212_439)
-    parser.add_argument("--total-items", type=int, default=3_000)
-    parser.add_argument("--sample-users", type=int, default=2_000)
+    parser.add_argument("--train", type=Path, default=Path("data/experiment_v4/train.csv"))
+    parser.add_argument(
+        "--validation", type=Path, default=Path("data/experiment_v4/validation.csv")
+    )
+    parser.add_argument("--output-dir", type=Path, default=Path("reports/v4/item_cf"))
+    parser.add_argument("--total-users", type=int, default=20_000)
+    parser.add_argument("--total-items", type=int, default=2_000)
+    parser.add_argument("--sample-users", type=int, default=20_000)
     parser.add_argument("--trials", type=int, default=8)
     parser.add_argument("--grid-trials", type=int, default=6)
     parser.add_argument(

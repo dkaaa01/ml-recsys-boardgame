@@ -60,14 +60,14 @@ def run_final_test(args: argparse.Namespace) -> dict[str, float]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--train", type=Path, default=Path("data/experiment_10k/train.csv"))
-    parser.add_argument("--test", type=Path, default=Path("data/experiment_10k/test.csv"))
+    parser.add_argument("--train", type=Path, default=Path("data/experiment_v4/train.csv"))
+    parser.add_argument("--test", type=Path, default=Path("data/experiment_v4/test.csv"))
     parser.add_argument("--best-config", type=Path,
-                        default=Path("reports/matrix_factorization_10k/best_mf.json"))
+                        default=Path("reports/v4/matrix_factorization/best_mf.json"))
     parser.add_argument("--output-dir", type=Path,
-                        default=Path("reports/matrix_factorization_10k"))
-    parser.add_argument("--total-users", type=int, default=10_000)
-    parser.add_argument("--total-items", type=int, default=1_500)
+                        default=Path("reports/v4/matrix_factorization"))
+    parser.add_argument("--total-users", type=int, default=20_000)
+    parser.add_argument("--total-items", type=int, default=2_000)
     parser.add_argument("--top-k", type=int, default=10, choices=(10,))
     parser.add_argument("--relevant-threshold", type=float, default=8.0)
     args = parser.parse_args()

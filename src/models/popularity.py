@@ -103,7 +103,7 @@ def write_popularity_outputs(
             "mean_rating",
             "popularity_score",
         ]
-        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         for rank, row in enumerate(ranking, 1):
             writer.writerow(
@@ -137,8 +137,12 @@ def recommend_unseen_games(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--train", type=Path, default=Path("data/processed/train.csv"))
-    parser.add_argument("--games", type=Path, default=Path("data/processed/games.csv"))
+    parser.add_argument(
+        "--train", type=Path, default=Path("data/processed/v4/train.csv")
+    )
+    parser.add_argument(
+        "--games", type=Path, default=Path("data/processed/v4/games.csv")
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("reports/baseline"))
     parser.add_argument("--prior-quantile", type=float, default=0.75)
     args = parser.parse_args()

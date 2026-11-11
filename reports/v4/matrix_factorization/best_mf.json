@@ -1,0 +1,20 @@
+{
+  "trial": 2,
+  "factors": 32,
+  "learning_rate": 0.02,
+  "regularization": 0.01,
+  "epochs": 18,
+  "batch_size": 4096,
+  "seed": 42,
+  "min_rating": 1.0,
+  "max_rating": 10.0,
+  "rmse": 1.2517797073344448,
+  "recall_at_10": 0.02404517703466088,
+  "ndcg_at_10": 0.020054648119838054,
+  "coverage": 0.806,
+  "rating_predictions": 215504.0,
+  "ranking_users": 20000.0,
+  "train_rmse": 0.8279564604406024,
+  "fit_seconds": 14.249755957629532,
+  "evaluation_seconds": 2.298322125338018
+}

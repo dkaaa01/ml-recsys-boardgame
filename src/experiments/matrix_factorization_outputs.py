@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 from dataclasses import asdict
 from pathlib import Path
+
+# Keep Matplotlib and font caches inside the project workspace.
+os.environ.setdefault("MPLCONFIGDIR", str(Path(".cache/matplotlib").resolve()))
+os.environ.setdefault("XDG_CACHE_HOME", str(Path(".cache").resolve()))
 
 import matplotlib.pyplot as plt
 import numpy as np
