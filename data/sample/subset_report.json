@@ -1,0 +1,33 @@
+{
+  "selection_source": "train split only",
+  "source_processed_dir": "data/experiment",
+  "users": 200,
+  "items": 200,
+  "min_user_train_ratings": 5,
+  "relevant_threshold": 8.0,
+  "evaluation_users": 200,
+  "seed": 42,
+  "eligible_users": 15167,
+  "activity_strata": {
+    "20-39": {
+      "eligible": 10450,
+      "sampled": 138
+    },
+    "40-79": {
+      "eligible": 3623,
+      "sampled": 48
+    },
+    "80+": {
+      "eligible": 1094,
+      "sampled": 14
+    }
+  },
+  "split_counts": {
+    "train": 7140,
+    "validation": 1103,
+    "test": 963
+  },
+  "interactions": 9206,
+  "metadata_rows": 200,
+  "matrix_sparsity": 0.76985
+}

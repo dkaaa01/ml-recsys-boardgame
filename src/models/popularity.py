@@ -91,9 +91,27 @@ def write_popularity_outputs(
     ranking: list[dict[str, object]],
     metadata: dict[str, float],
     output_dir: Path,
+    *,
+    csv_output: Path | None = None,
 ) -> None:
+    """Write the report copy and, optionally, the team handoff CSV."""
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    with (output_dir / "popular_games.csv").open("w", encoding="utf-8", newline="") as output:
+    _write_popularity_csv(ranking, output_dir / "popular_games.csv")
+    if csv_output is not None:
+        _write_popularity_csv(ranking, csv_output)
+    with (output_dir / "popularity_report.json").open("w", encoding="utf-8") as output:
+        json.dump(metadata, output, indent=2)
+        output.write("\n")
+
+
+def _write_popularity_csv(
+    ranking: list[dict[str, object]], output_path: Path
+) -> None:
+    """Write one stable ranking schema for reports and team handoff."""
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="") as output:
         fieldnames = [
             "rank",
             "item_id",
@@ -114,9 +132,6 @@ def write_popularity_outputs(
                     "popularity_score": f"{float(row['popularity_score']):.6f}",
                 }
             )
-    with (output_dir / "popularity_report.json").open("w", encoding="utf-8") as output:
-        json.dump(metadata, output, indent=2)
-        output.write("\n")
 
 
 def recommend_unseen_games(
@@ -138,16 +153,24 @@ def recommend_unseen_games(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--train", type=Path, default=Path("data/processed/train.csv")
+        "--train", type=Path, default=Path("data/experiment/train.csv")
     )
     parser.add_argument(
-        "--games", type=Path, default=Path("data/processed/games.csv")
+        "--games", type=Path, default=Path("data/experiment/games.csv")
     )
     parser.add_argument("--output-dir", type=Path, default=Path("reports/baseline"))
+    parser.add_argument(
+        "--csv-output",
+        type=Path,
+        default=Path("data/experiment/popularity.csv"),
+        help="Team handoff CSV written from the same experiment ranking.",
+    )
     parser.add_argument("--prior-quantile", type=float, default=0.75)
     args = parser.parse_args()
     ranking, metadata = rank_popular_games(args.train, args.games, args.prior_quantile)
-    write_popularity_outputs(ranking, metadata, args.output_dir)
+    write_popularity_outputs(
+        ranking, metadata, args.output_dir, csv_output=args.csv_output
+    )
     for rank, row in enumerate(ranking[:10], 1):
         print(
             f"{rank:2d}. {row['name']} | score={row['popularity_score']:.3f} "

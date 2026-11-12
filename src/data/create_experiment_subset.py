@@ -141,7 +141,7 @@ def write_filtered_split(
         "w", encoding="utf-8", newline=""
     ) as output:
         reader = csv.DictReader(source)
-        writer = csv.writer(output)
+        writer = csv.writer(output, lineterminator="\n")
         writer.writerow(("user_id", "item_id", "rating"))
         for row in reader:
             old_user = int(row["user_id"])
@@ -168,7 +168,7 @@ def write_games(
         if not reader.fieldnames:
             raise ValueError(f"No header in {source_path}")
         fields = ["item_id", "source_item_id", *[f for f in reader.fieldnames if f != "item_id"]]
-        writer = csv.DictWriter(output, fieldnames=fields)
+        writer = csv.DictWriter(output, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         for row in reader:
             old_item = int(row["item_id"])
@@ -194,7 +194,7 @@ def write_users(
     """Write the compact-to-source user mapping and activity information."""
 
     with output_path.open("w", encoding="utf-8", newline="") as output:
-        writer = csv.writer(output)
+        writer = csv.writer(output, lineterminator="\n")
         writer.writerow(
             ("user_id", "source_user_id", "train_rating_count", "activity_bin")
         )
@@ -212,7 +212,7 @@ def write_eval_users(
     if relevant_counts is None:
         return
     with output_path.open("w", encoding="utf-8", newline="") as output:
-        writer = csv.writer(output)
+        writer = csv.writer(output, lineterminator="\n")
         writer.writerow(
             (
                 "user_id",

@@ -72,6 +72,20 @@ users, 2,000 games, and 94.93% matrix sparsity. Generated CSV files remain
 excluded from Git; the selection code, report schema, and reproduction command
 are versioned.
 
+### Team handoff files
+
+The train-only Bayesian ranking is generated with the same 20,000-user ×
+2,000-game experiment scope:
+
+```bash
+.venv/bin/python -m src.models.popularity
+```
+
+This writes `data/experiment/popularity.csv` with rank, game ID, train rating
+count, mean rating, and Bayesian score. A small, versioned integration sample is
+available under `data/sample/`; its [README](data/sample/README.md) records the
+selection rules, file schema, counts, and reproduction commands.
+
 ![Rating counts per user and game](reports/eda/interaction_count_distributions.png)
 
 ![Rating distribution](reports/eda/rating_distribution.png)

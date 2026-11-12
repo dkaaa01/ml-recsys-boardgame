@@ -13,7 +13,11 @@ from src.models.content_based import (
     ContentConfig,
     build_item_features,
 )
-from src.models.popularity import rank_popular_games, recommend_unseen_games
+from src.models.popularity import (
+    rank_popular_games,
+    recommend_unseen_games,
+    write_popularity_outputs,
+)
 
 
 class PopularityTest(unittest.TestCase):
@@ -37,6 +41,16 @@ class PopularityTest(unittest.TestCase):
             self.assertAlmostEqual(metadata["global_mean_rating"], 7.75)
             recommendations = recommend_unseen_games(ranking, seen_item_ids={0}, top_k=1)
             self.assertEqual(recommendations[0]["name"], "Average Game")
+
+            report_dir = root / "report"
+            handoff = root / "popularity.csv"
+            write_popularity_outputs(
+                ranking, metadata, report_dir, csv_output=handoff
+            )
+            self.assertEqual(
+                handoff.read_text(encoding="utf-8"),
+                (report_dir / "popular_games.csv").read_text(encoding="utf-8"),
+            )
 
 
 class ContentBasedTest(unittest.TestCase):
