@@ -91,7 +91,8 @@ def write_final_report(
                 ha="center",
                 va="bottom",
             )
-    figure.suptitle("Frozen Adjusted-Cosine Model: Validation vs Test")
+    similarity_label = config.similarity.replace("_", " ").title()
+    figure.suptitle(f"Frozen {similarity_label} Model: Validation vs Test")
     figure.tight_layout()
     figure.savefig(output_dir / "validation_vs_test.png", dpi=180)
     plt.close(figure)
