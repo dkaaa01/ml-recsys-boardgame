@@ -314,7 +314,8 @@ then prints 10 matching games.
 - **Profile:** hybrid scores from `scores.csv`, excluding games the user already rated
   in train. Profiles with no train history or no scores fall back to the guest mode
   with a notice.
-  Guest (Enter at the profile prompt), 4 players, 60 minutes:
+  
+Guest (Enter at the profile prompt), 4 players, 60 minutes:
 
 ![CLI guest](reports/cli_guest.png)
 
