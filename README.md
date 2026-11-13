@@ -224,3 +224,99 @@ Recall@10 of 0.0431/0.0438, RMSE of 1.3291/1.3258, and Coverage of 0.8155 on
 both splits. The compact handoff file contains the Top 100 scored unseen games
 per user at `data/experiment/content_scores.csv`; reproducible reports are in
 `reports/content_based/`.
+## Hybrid Recommender and Terminal Program
+
+### Method
+
+The hybrid model combines Item-Item CF and the content-based model for one user at a
+time and returns a Top 10:
+
+`hybrid(u, i) = w * ItemCF_norm(u, i) + (1 - w) * content_norm(u, i)`
+
+`w` is the weight given to ItemCF. Both scores are min-max normalized to 0-1 per user
+(games already rated in train are excluded) and then mixed. Games for which ItemCF finds
+no similar-game evidence get an ItemCF score of 0: `score_user` in `item_cf.py` falls
+back to popularity, but the hybrid does not treat that as a collaborative-filtering
+score. Ties are broken by the smaller game ID.
+
+The hypothesis is that ItemCF (rating patterns) and content-based (game descriptions
+and features) use different information, so combining them may beat either alone.
+
+### Choosing w
+
+`w` is chosen from {0.25, 0.50, 0.75} by validation NDCG@10. The test split is used
+once, after the choice.
+
+| w (ItemCF weight) | Validation NDCG@10 |
+| ---: | ---: |
+| **0.25** | **0.0464** |
+| 0.50 | 0.0435 |
+| 0.75 | 0.0379 |
+
+The selected value is `w = 0.25`. Validation NDCG@10 dropped as `w` grew (more ItemCF
+weight). The gap between 0.25 and 0.50 is 0.0029.
+
+### Setup
+
+Final results use `data/experiment` (20,000 users, 2,000 games, 1,599,055 train
+ratings); the test users are the 20,000 users in `eval_users.csv`.
+
+| Model | Setting |
+| --- | --- |
+| ItemCF | Pearson, 20 neighbors, min_overlap 3, shrinkage 0.0, min_similarity 0.0, positive_threshold 8.0, baseline_residual |
+| Content-based | max_description_features 4000, min_document_frequency 2, description_weight 0.5, liked_threshold 8.0, rating_scale 2.0 |
+| Matrix Factorization | factors 32, lr 0.02, reg 0.01, epochs 18, batch 4096, seed 42, ratings 1-10 |
+| Hybrid | `w` in {0.25, 0.50, 0.75}, chosen by validation NDCG@10 |
+
+### Results
+
+Test NDCG@10 on the 20,000-user experiment data:
+
+| Model | Test NDCG@10 |
+| --- | ---: |
+| **Hybrid (w = 0.25)** | **0.0463** |
+| ItemCF | 0.0413 |
+| Content-based | 0.0352 |
+| Matrix Factorization | 0.0197 |
+
+The hybrid is the highest of these four models. It is 0.0050 above ItemCF and 0.0111
+above content-based. The differences are small, were measured in a single run without
+a significance test, and may be due to chance. One possible reason for the gain is that
+ItemCF and content-based use different information and complement each other; this was
+not tested directly.
+
+### Commands
+
+```bash
+# Writes outputs/top10_test.csv (model,user_id,item_id,rank for item_cf, mf, content,
+# hybrid; before any player/time filter) and outputs/scores.csv (hybrid scores).
+.venv/bin/python make_top10.py --data-dir data/experiment
+
+# Terminal recommender: profile (user ID, name, or Enter for guest) -> players -> max minutes.
+.venv/bin/python recommend_cli.py --data-dir data/sample --scores outputs/scores.csv
+```
+
+MF scores are clipped to 1-10, so many games tie at the maximum. The MF rows of
+`top10_test.csv` use the same ranking function as the MF evaluation (`_top_items`), so
+the MF test NDCG@10 matches the team result (0.0197). The `scores.csv` for
+`data/experiment` is about 760 MB and is not committed; regenerate it with the first
+command.
+
+### Terminal program
+
+`recommend_cli.py` asks for a profile, the number of players and the maximum playtime,
+then prints 10 matching games.
+
+- **Filter:** keeps games with `condition_eligible` and `is_valid` true, whose player
+  range includes the given number, and whose `max_playtime` is at most the given
+  minutes (the playtime rule is our own assumption).
+- **Guest (Enter at the profile prompt):** games ranked by the number of train ratings.
+- **Profile:** hybrid scores from `scores.csv`, excluding games the user already rated
+  in train. Profiles with no train history or no scores fall back to the guest mode
+  with a notice.
+
+### Reference
+
+- [Weighted hybridization](https://apxml.com/courses/building-ml-recommendation-system/chapter-6-constructing-a-hybrid-recommendation-system/weighted-hybridization).
+  The `alpha` in that article weights the content side, so its direction is opposite to
+  `w` here.
