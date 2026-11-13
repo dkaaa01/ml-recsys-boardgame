@@ -1,0 +1,33 @@
+{
+  "selection_source": "train split only",
+  "source_processed_dir": "data/processed",
+  "users": 20000,
+  "items": 2000,
+  "min_user_train_ratings": 20,
+  "relevant_threshold": 8.0,
+  "evaluation_users": 20000,
+  "seed": 42,
+  "eligible_users": 162434,
+  "activity_strata": {
+    "20-39": {
+      "eligible": 63694,
+      "sampled": 7842
+    },
+    "40-79": {
+      "eligible": 50026,
+      "sampled": 6160
+    },
+    "80+": {
+      "eligible": 48714,
+      "sampled": 5998
+    }
+  },
+  "split_counts": {
+    "train": 1599055,
+    "validation": 215504,
+    "test": 214663
+  },
+  "interactions": 2029222,
+  "metadata_rows": 2000,
+  "matrix_sparsity": 0.94926945
+}

@@ -8,11 +8,8 @@ __pycache__/
 # Large, reproducible artifacts
 data/raw/*
 data/processed/*
-data/experiment/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
-!data/experiment/.gitkeep
-!data/experiment/popularity.csv
 
 # Temporary ItemCF smoke runs.
 reports/item_cf_smoke/
