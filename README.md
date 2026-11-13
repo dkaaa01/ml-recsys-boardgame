@@ -317,11 +317,11 @@ then prints 10 matching games.
   
 Guest (Enter at the profile prompt), 4 players, 60 minutes:
 
-![CLI guest](reports/cli_guest.png)
+![CLI guest](reports/hybrid/cli_guest.png)
 
 Profile 0 (personalized), 4 players, 60 minutes:
 
-![CLI profile](reports/cli_profile.png)
+![CLI profile](reports/hybrid/cli_profile.png)
 
 ### Reference
 
