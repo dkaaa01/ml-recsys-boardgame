@@ -25,6 +25,7 @@ from src.metrics import ndcg_at_k
 from src.models.content_based import (
     ContentBasedRecommender, ContentConfig, build_item_features)
 from src.models.item_cf import ItemCFConfig, ItemItemCF
+from src.experiments.matrix_factorization_evaluation import _top_items as mf_team_top_items
 from src.models.matrix_factorization import MatrixFactorization, MatrixFactorizationConfig
 
 LIKED = 8.0
@@ -125,7 +126,11 @@ def main() -> None:
     tdata = build_user_data(cf, content, users)
     rows = []
     rows += single_model_rows("item_cf", cf.score_user, users, seen)
-    rows += single_model_rows("mf", mf.score_user, users, seen)
+    # MF scores are clipped to 1..10, so many games tie at the maximum. Use the team's own
+    # ranking (_top_items) so the tie handling matches the team's reported MF test result.
+    for u in users:
+        for rank, g in enumerate(mf_team_top_items(mf, u, 10), start=1):
+            rows.append(("mf", u, int(g), rank))
     rows += single_model_rows("content", lambda u: np.asarray(
         (content.user_profiles_[u] @ content.item_features_.T).todense()).ravel(), users, seen)
     rows += final_top10(tdata, best_w, model_name="hybrid")
