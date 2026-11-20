@@ -1,9 +1,9 @@
 # Small execution sample
 
 This directory is a deterministic execution-check sample derived from the
-current 20,000-user × 2,000-game experiment data. Selection uses train-only
-statistics and seed 42, so validation and test information do not determine
-which users or games enter the sample.
+current 20,000-user × 2,000-game experiment data. Catalog and user-activity selection use training statistics and seed 42.
+Eligibility additionally requires an 8+ rating in each split, so held-out
+labels determine whether a user can enter the evaluation cohort.
 
 ## Size
 

@@ -31,7 +31,16 @@ STOPWORDS = {
 
 @dataclass(frozen=True)
 class ContentConfig:
-    """Feature and user-profile settings selected on validation data."""
+    """Feature and rating-estimate settings for content recommendation.
+
+    Args:
+        max_description_features: Maximum number of selected description terms.
+        min_document_frequency: Minimum games containing a selected term.
+        description_weight: Weight in [0, 1] for normalized TF-IDF; normalized
+            category/mechanic tags receive 1 - description_weight.
+        liked_threshold: Minimum training rating used to build a user profile.
+        rating_scale: Nonnegative similarity-to-rating multiplier for RMSE only.
+    Settings are frozen and compared using validation data in the experiment."""
 
     max_description_features: int = 4_000
     min_document_frequency: int = 2
@@ -40,6 +49,11 @@ class ContentConfig:
     rating_scale: float = 2.0
 
     def __post_init__(self) -> None:
+        """Validate feature limits, mixture weight, liking threshold and rating scale.
+
+        Called automatically by the dataclass. Returns None; invalid limits or
+        weights raise ValueError before the configuration reaches a model."""
+
         if self.max_description_features <= 0:
             raise ValueError("max_description_features must be positive")
         if self.min_document_frequency <= 0:
@@ -54,7 +68,13 @@ class ContentConfig:
 
 @dataclass(frozen=True)
 class ItemFeatures:
-    """Normalized sparse item features and their component sizes."""
+    """Normalized item features with their description and tag dimensions.
+
+    Args:
+        matrix: CSR matrix with games on rows and combined features on columns.
+        description_features: Number of selected TF-IDF term columns.
+        tag_features: Number of category/mechanic columns.
+    The frozen object keeps feature metadata attached to the corresponding matrix."""
 
     matrix: sparse.csr_matrix
     description_features: int
@@ -67,7 +87,18 @@ def build_item_features(
     *,
     expected_items: int | None = None,
 ) -> ItemFeatures:
-    """Build a TF-IDF description matrix plus category/mechanic multi-hot tags."""
+    """Build normalized game vectors from descriptions and category/mechanic tags.
+
+    Args:
+        games_path: Metadata CSV containing contiguous item_id values and
+            description, categories and mechanics fields.
+        config: ContentConfig governing vocabulary limits and mixture weights.
+        expected_items: Optional required row count, usually the training width.
+    Returns:
+        ItemFeatures with TF-IDF and tag blocks concatenated and L2-normalized.
+        Vocabulary fitting uses the available catalog text, not held-out ratings.
+    Raises:
+        ValueError: If IDs/columns/count are inconsistent or no features remain."""
 
     # Step 1: load games in contiguous item-ID order so feature rows line up
     # exactly with the interaction-matrix columns.
@@ -106,9 +137,21 @@ def build_item_features(
 
 
 class ContentBasedRecommender:
-    """Recommend games close to a user's weighted liked-game profile."""
+    """Rank games by cosine similarity to a user's liked-game content profile.
+
+    Training ratings at least liked_threshold contribute weight
+    rating - liked_threshold + 1 to the profile. Profile and item vectors are
+    L2-normalized, so their dot product gives the content score. predict_pairs()
+    uses a separate user-mean-centered transformation solely to report RMSE."""
 
     def __init__(self, config: ContentConfig | None = None) -> None:
+        """Create an unfitted content recommender.
+
+        Args:
+            config: Immutable feature/profile settings; None selects ContentConfig().
+        Returns:
+            None. fit() constructs user profiles and rating baselines."""
+
         self.config = config or ContentConfig()
         self.train_: sparse.csr_matrix | None = None
         self.item_features_: sparse.csr_matrix | None = None
@@ -121,7 +164,17 @@ class ContentBasedRecommender:
         train: sparse.csr_matrix,
         item_features: sparse.csr_matrix,
     ) -> "ContentBasedRecommender":
-        """Create one normalized content profile per user from liked train games."""
+        """Aggregate liked training games into normalized user preference vectors.
+
+        Args:
+            train: Sparse user-by-item matrix containing observed training ratings.
+            item_features: Sparse item-by-feature matrix from build_item_features;
+                its row order must match the item columns of train.
+        Returns:
+            This fitted model. A user without a liked game gets a zero profile;
+            their content similarities are zero rather than evidence of dislike.
+        Raises:
+            ValueError: If item dimensions differ or training has no ratings."""
 
         train = train.tocsr().astype(np.float32)
         item_features = item_features.tocsr().astype(np.float32)
@@ -168,7 +221,20 @@ class ContentBasedRecommender:
         *,
         batch_size: int = 50_000,
     ) -> np.ndarray:
-        """Predict held-out ratings from centered content similarity."""
+        """Convert content similarities into bounded estimates for held-out RMSE.
+
+        The estimate is user_mean + rating_scale * (pair_similarity - the
+        user's mean catalog similarity), clipped to [1, 10]. Ranking uses raw
+        cosine scores instead of this rating conversion.
+
+        Args:
+            user_ids: Iterable of valid zero-based fitted user rows.
+            item_ids: Equally long iterable of valid fitted game columns.
+            batch_size: Positive maximum number of pairs scored together.
+        Returns:
+            Float32 array of one estimate per pair, or an empty array for no pairs.
+        Raises:
+            ValueError: If the two ID sequences have different lengths."""
 
         self._require_fit()
         users = np.asarray(list(user_ids), dtype=np.int64)
@@ -205,7 +271,17 @@ class ContentBasedRecommender:
         top_k: int = 10,
         batch_size: int = 256,
     ) -> Iterator[tuple[int, list[tuple[int, float]]]]:
-        """Yield deterministic unseen recommendations and raw cosine scores."""
+        """Yield unseen-game rankings in bounded user batches.
+
+        Args:
+            user_ids: Iterable of valid zero-based fitted user rows.
+            top_k: Positive maximum number of games returned per user.
+            batch_size: Positive maximum number of user profiles scored together.
+        Returns:
+            Iterator of (user_id, [(item_id, cosine_score), ...]). Train-rated
+            games are masked. Selected games are sorted by score, then item ID.
+        Raises:
+            ValueError: If top_k is nonpositive."""
 
         self._require_fit()
         if top_k <= 0:
@@ -244,7 +320,15 @@ class ContentBasedRecommender:
         top_k: int = 10,
         batch_size: int = 256,
     ) -> tuple[dict[int, list[int]], dict[int, list[float]]]:
-        """Return recommendation IDs and corresponding content scores."""
+        """Collect the batched iterator into recommendation and score dictionaries.
+
+        Args:
+            user_ids: Iterable of valid zero-based fitted user IDs.
+            top_k: Positive maximum number of results per user.
+            batch_size: Positive number of profiles per scoring batch.
+        Returns:
+            (recommendations, scores), each keyed by user ID. Values are aligned
+            lists of unseen item IDs and their raw cosine similarities."""
 
         recommendations: dict[int, list[int]] = {}
         scores: dict[int, list[float]] = {}
@@ -256,11 +340,25 @@ class ContentBasedRecommender:
         return recommendations, scores
 
     def _require_fit(self) -> None:
+        """Raise RuntimeError if training data or user profiles are absent.
+
+        Returns:
+            None when fit() has populated the state used by scoring methods."""
+
         if self.train_ is None or self.user_profiles_ is None:
             raise RuntimeError("model must be fitted before prediction")
 
 
 def _load_games(path: Path) -> list[dict[str, str]]:
+    """Read metadata in contiguous item-ID order and validate required fields.
+
+    Args:
+        path: UTF-8 games CSV with item_id, description, categories and mechanics.
+    Returns:
+        Metadata rows sorted by integer item_id from zero to item count minus one.
+    Raises:
+        ValueError: If rows/required columns are missing or IDs are not contiguous."""
+
     with path.open("r", encoding="utf-8", newline="") as source:
         rows = list(csv.DictReader(source))
     required = {"item_id", "description", "categories", "mechanics"}
@@ -274,6 +372,14 @@ def _load_games(path: Path) -> list[dict[str, str]]:
 
 
 def _token_counts(text: str) -> Counter[str]:
+    """Decode HTML, lowercase text, and count retained description tokens.
+
+    Args:
+        text: One game description, possibly containing HTML entities or tags.
+    Returns:
+        Counter of matching tokens at least three characters long, excluding
+        STOPWORDS. TOKEN_PATTERN defines the accepted letters/digits/apostrophes."""
+
     cleaned = HTML_TAG_PATTERN.sub(" ", html.unescape(text)).lower()
     return Counter(
         token
@@ -288,6 +394,21 @@ def _tfidf_matrix(
     max_features: int,
     min_document_frequency: int,
 ) -> sparse.csr_matrix:
+    """Calculate sparse, row-normalized sublinear TF-IDF description vectors.
+
+    A retained token has tf = 1 + log(count) and
+    idf = log((1 + number_of_documents)/(1 + document_frequency)) + 1.
+    Terms pass the document-frequency floor, then the most frequent corpus
+    terms are kept; lexicographic order resolves equal corpus frequencies.
+
+    Args:
+        documents: One token Counter per catalog game, in item-ID order.
+        max_features: Positive vocabulary cap.
+        min_document_frequency: Minimum number of documents containing a token.
+    Returns:
+        Float32 CSR matrix with one row per document and at most max_features
+        columns. If no token survives, its shape is (documents, 0)."""
+
     document_frequency: Counter[str] = Counter()
     corpus_frequency: Counter[str] = Counter()
     for counts in documents:
@@ -326,6 +447,14 @@ def _tfidf_matrix(
 
 
 def _tag_matrix(rows: list[dict[str, str]]) -> sparse.csr_matrix:
+    """Encode category and mechanic lists as separate normalized multi-hot features.
+
+    Args:
+        rows: Metadata rows containing serialized categories and mechanics lists.
+    Returns:
+        Float32 game-by-tag CSR matrix. Prefixes keep an identically named
+        category and mechanic distinct; sorted tags make columns reproducible."""
+
     per_item: list[list[str]] = []
     all_tags: set[str] = set()
     for row in rows:
@@ -349,6 +478,14 @@ def _tag_matrix(rows: list[dict[str, str]]) -> sparse.csr_matrix:
 
 
 def _parse_list(value: str) -> list[str]:
+    """Safely parse a CSV-serialized Python list of category/mechanic labels.
+
+    Args:
+        value: Text such as a bracketed list of quoted labels.
+    Returns:
+        Nonempty stripped label strings. Malformed or non-list values give [].
+        ast.literal_eval accepts literals without executing arbitrary Python."""
+
     try:
         parsed = ast.literal_eval(value)
     except (SyntaxError, ValueError):
@@ -359,6 +496,14 @@ def _parse_list(value: str) -> list[str]:
 
 
 def _normalize_rows(matrix: sparse.csr_matrix) -> sparse.csr_matrix:
+    """L2-normalize nonzero sparse feature rows while preserving empty rows.
+
+    Args:
+        matrix: Sparse row-by-feature matrix.
+    Returns:
+        Float32 CSR matrix where nonempty rows have unit Euclidean norm.
+        A zero norm receives inverse zero to avoid division by zero."""
+
     matrix = matrix.tocsr().astype(np.float32)
     norms = np.sqrt(np.asarray(matrix.multiply(matrix).sum(axis=1)).ravel())
     inverse = np.divide(

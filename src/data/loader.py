@@ -20,7 +20,15 @@ from scipy import sparse
 
 @dataclass(frozen=True)
 class InteractionData:
-    """A sparse rating matrix and the number of CSV rows used to build it."""
+    """Store the sparse ratings and the number of retained input rows.
+
+    Attributes
+    ----------
+    ratings : scipy.sparse.csr_matrix
+        Matrix of shape (users, games). Stored values are observed ratings.
+    interactions : int
+        Number of CSV rows read after filtering, before duplicate coordinates sum.
+    """
 
     ratings: sparse.csr_matrix
     interactions: int
@@ -32,12 +40,28 @@ def load_interactions(
     shape: tuple[int, int] | None = None,
     user_filter: Collection[int] | None = None,
 ) -> InteractionData:
-    """Load ``user_id,item_id,rating`` CSV rows into a CSR matrix.
+    """Read processed user/item/rating rows into a sparse matrix.
 
-    ``array.array`` is used instead of Python lists.  Twelve million Python
-    integer objects would consume far more memory than packed 32-bit arrays.
-    A user filter supports reproducible, representative smoke experiments: the
-    whole CSV is scanned, so selected users retain ratings across all games.
+    Parameters
+    ----------
+    path : Path
+        CSV containing integer user_id/item_id and numeric rating columns.
+    shape : tuple[int, int] or None
+        Required (user count, game count), shared between splits. If omitted,
+        infer dimensions from the largest IDs among retained rows.
+    user_filter : collection[int] or None
+        Keep only these users, retaining their original row IDs.
+
+    Returns
+    -------
+    InteractionData
+        CSR ratings and retained input-row count. Missing cells represent
+        unobserved ratings. Duplicate coordinates are summed by SciPy, so callers
+        must supply the deduplicated preprocessing output.
+
+    Packed array.array buffers limit memory use. np.frombuffer creates views of
+    these buffers, COO constructs indexed observations, and conversion to CSR
+    supports efficient user-row slicing and matrix products.
     """
 
     selected = set(user_filter) if user_filter is not None else None
@@ -79,7 +103,22 @@ def load_interactions(
 
 
 def sample_user_ids(total_users: int, sample_size: int, seed: int = 42) -> np.ndarray:
-    """Return a sorted deterministic user sample without replacement."""
+    """Choose sorted user IDs without replacement.
+
+    Parameters
+    ----------
+    total_users : int
+        Number of available zero-based user IDs, 0 through total_users - 1.
+    sample_size : int
+        Number to retain, from 1 through total_users.
+    seed : int
+        NumPy generator seed, default 42, making repeated samples reproducible.
+
+    Returns
+    -------
+    numpy.ndarray
+        Sorted integer IDs of length sample_size.
+    """
 
     if not 0 < sample_size <= total_users:
         raise ValueError("sample_size must be between 1 and total_users")

@@ -26,7 +26,17 @@ ScoringName = Literal["weighted_mean", "baseline_residual"]
 
 @dataclass(frozen=True)
 class ItemCFConfig:
-    """Hyperparameters used by :class:`ItemItemCF`."""
+    """Settings for item-item collaborative filtering.
+
+    Args:
+        similarity: cosine, adjusted_cosine, pairwise Pearson or positive Jaccard.
+        neighbors: Maximum nonzero neighbors retained for each target game.
+        min_overlap: Minimum number of co-raters required for an item pair.
+        shrinkage: Nonnegative support penalty lambda in s*n/(n+lambda).
+        min_similarity: Similarities below this threshold are discarded.
+        positive_threshold: Minimum rating counted as positive by Jaccard.
+        scoring: weighted_mean or user-mean-centered baseline_residual.
+    The frozen configuration records a trial without being changed by fit()."""
 
     similarity: SimilarityName = "adjusted_cosine"
     neighbors: int = 40
@@ -38,9 +48,21 @@ class ItemCFConfig:
 
 
 class ItemItemCF:
-    """Recommend games using similarities between item rating vectors."""
+    """Fit an item similarity matrix and score unseen games from training ratings.
+
+    Input matrices have users on rows and games on columns; absent entries
+    represent unobserved ratings. Learned similarities are stored as a sparse
+    item-by-item matrix with at most config.neighbors entries per row.
+    The four similarities and the scoring rules are implemented in this file."""
 
     def __init__(self, config: ItemCFConfig | None = None) -> None:
+        """Create an unfitted model with an optional immutable configuration.
+
+        Args:
+            config: ItemCFConfig; None uses its declared defaults.
+        Returns:
+            None. Learned matrices and means are populated by fit()."""
+
         self.config = config or ItemCFConfig()
         self.train_: sparse.csr_matrix | None = None
         self.similarity_: sparse.csr_matrix | None = None
@@ -51,7 +73,13 @@ class ItemItemCF:
 
     @staticmethod
     def _means(matrix: sparse.csr_matrix, axis: int) -> tuple[np.ndarray, np.ndarray]:
-        """Return observed-value means and counts along an axis."""
+        """Calculate means from stored observations, excluding absent cells.
+
+        Args:
+            matrix: Sparse user-by-item rating matrix.
+            axis: 1 for per-user means, 0 for per-item means.
+        Returns:
+            One-dimensional (means, counts); an empty row or column has mean zero."""
 
         counts = np.asarray(matrix.getnnz(axis=axis), dtype=np.int64)
         sums = np.asarray(matrix.sum(axis=axis)).ravel()
@@ -60,6 +88,14 @@ class ItemItemCF:
 
     @staticmethod
     def _center_rows(matrix: sparse.csr_matrix, means: np.ndarray) -> sparse.csr_matrix:
+        """Subtract a user's mean from each of their observed ratings.
+
+        Args:
+            matrix: User-by-item CSR matrix with missing entries absent.
+            means: One observed-rating mean per user row.
+        Returns:
+            Float64 CSR copy with centered observations; exact zeros are removed."""
+
         centered = matrix.astype(np.float64, copy=True)
         centered.data -= np.repeat(means, np.diff(centered.indptr))
         centered.eliminate_zeros()
@@ -67,6 +103,14 @@ class ItemItemCF:
 
     @staticmethod
     def _center_columns(matrix: sparse.csr_matrix, means: np.ndarray) -> sparse.csr_matrix:
+        """Subtract an item mean from each stored rating in that column.
+
+        Args:
+            matrix: User-by-item CSR matrix with missing entries absent.
+            means: One observed-rating mean per game column.
+        Returns:
+            Float64 CSR copy with centered observations; exact zeros are removed."""
+
         centered = matrix.astype(np.float64, copy=True)
         centered.data -= means[centered.indices]
         centered.eliminate_zeros()
@@ -74,7 +118,13 @@ class ItemItemCF:
 
     @staticmethod
     def _cosine_from_columns(matrix: sparse.csr_matrix) -> np.ndarray:
-        """Return cosine similarity between the columns of a sparse matrix."""
+        """Compute cosine similarity between game columns.
+
+        Args:
+            matrix: Sparse user-by-item matrix, optionally already centered.
+        Returns:
+            Dense item-by-item similarity array. A zero-norm column has zero
+            similarity because its denominator is masked before division."""
 
         gram = (matrix.T @ matrix).toarray()
         norms = np.sqrt(np.maximum(np.diag(gram), 0.0))
@@ -82,7 +132,19 @@ class ItemItemCF:
         return np.divide(gram, denominator, out=np.zeros_like(gram), where=denominator > 0)
 
     def fit(self, ratings: sparse.csr_matrix) -> "ItemItemCF":
-        """Fit item statistics and retain only each item's strongest neighbors."""
+        """Calculate item similarities and keep each target game's top neighbors.
+
+        Cosine compares rating vectors; adjusted cosine subtracts user means;
+        Pearson centers each item pair over common raters; Jaccard compares
+        positive-rater sets. All variants use the same overlap and score filters.
+
+        Args:
+            ratings: User-by-item sparse matrix containing observed 1-10 ratings.
+        Returns:
+            This fitted model. Input ratings are copied, not changed.
+        Raises:
+            ValueError: If there are no observations, neighbors is nonpositive,
+                or the similarity name is unsupported."""
 
         if not sparse.isspmatrix_csr(ratings):
             ratings = ratings.tocsr()
@@ -92,7 +154,7 @@ class ItemItemCF:
             raise ValueError("neighbors must be positive")
 
         # Float32 is sufficiently precise for 1-10 ratings and halves both the
-        # sparse data and the temporary 3,000 x 3,000 similarity arrays.
+        # sparse data and the temporary dense item-pair similarity arrays.
         self.train_ = ratings.astype(np.float32, copy=True)
         self.train_.sort_indices()
         self.user_means_, user_counts = self._means(self.train_, axis=1)
@@ -123,7 +185,7 @@ class ItemItemCF:
             # Exact Pearson correlation must center *each item pair* using only
             # their common raters.  The formula below derives pairwise sums and
             # squared sums with sparse matrix multiplication; it avoids a slow
-            # Python loop over all 9 million item pairs.
+            # Python loop over the catalog's item pairs.
             cross_products = (self.train_.T @ self.train_).toarray()
             common_sums = (self.train_.T @ binary).toarray()
             squared = self.train_.copy()
@@ -131,9 +193,9 @@ class ItemItemCF:
             common_squared_sums = (squared.T @ binary).toarray()
             safe_overlap = overlaps.copy()
             safe_overlap[safe_overlap == 0] = 1.0
-            # Reuse dense buffers in place.  Each float32 item-pair array is
-            # about 36 MB; avoiding separate covariance/right-variance arrays
-            # materially lowers peak memory during Pearson computation.
+            # Reuse dense buffers in place. Each float32 item-pair array needs
+            # 4 * n_items**2 bytes (16 MB for the 2,000-game experiment).
+            # Avoiding duplicate covariance/variance arrays reduces peak memory.
             cross_products -= common_sums * common_sums.T / safe_overlap
             common_squared_sums -= common_sums**2 / safe_overlap
             denominator = np.sqrt(
@@ -174,7 +236,13 @@ class ItemItemCF:
         return self
 
     def _retain_top_neighbors(self, similarities: np.ndarray) -> sparse.csr_matrix:
-        """Convert a dense 3,000-item calculation into a small top-K CSR matrix."""
+        """Store the largest usable similarities for every target game.
+
+        Args:
+            similarities: Dense square array with zero diagonal and filtered pairs.
+        Returns:
+            Item-by-item CSR matrix retaining up to config.neighbors nonzero
+            entries per row. Chosen neighbors are ordered by score, then item ID."""
 
         item_count = similarities.shape[0]
         keep = min(self.config.neighbors, max(item_count - 1, 1))
@@ -198,12 +266,32 @@ class ItemItemCF:
         return matrix
 
     def _require_fit(self) -> tuple[sparse.csr_matrix, sparse.csr_matrix]:
+        """Check fitted state before reading the learned matrices.
+
+        Returns:
+            The user-by-item training CSR and item-by-item similarity CSR.
+        Raises:
+            RuntimeError: If fit() has not populated both matrices."""
+
         if self.train_ is None or self.similarity_ is None:
             raise RuntimeError("Call fit() before prediction")
         return self.train_, self.similarity_
 
     def score_user(self, user_id: int) -> np.ndarray:
-        """Score every item for one user, including deterministic fallbacks."""
+        """Predict scores for all games using one user's observed neighbors.
+
+        Baseline-residual scoring adds weighted deviations to the user's mean.
+        Weighted-mean scoring aggregates the raw neighboring ratings. A target
+        with no usable neighbor receives the training Bayesian popularity score.
+
+        Args:
+            user_id: Zero-based row index in the fitted training matrix.
+        Returns:
+            One score per game, clipped to [1, 10], including train-seen games.
+            Call recommend() to exclude already-rated games.
+        Raises:
+            RuntimeError: If the model is unfitted.
+            IndexError: If user_id is outside the fitted matrix."""
 
         train, similarities = self._require_fit()
         if not 0 <= user_id < train.shape[0]:
@@ -250,7 +338,15 @@ class ItemItemCF:
         return np.clip(scores, 1.0, 10.0)
 
     def predict(self, user_id: int, item_id: int) -> float:
-        """Predict a 1-10 rating for one user-item pair."""
+        """Return one clipped rating estimate from score_user().
+
+        Args:
+            user_id: Zero-based fitted user row.
+            item_id: Zero-based fitted game column.
+        Returns:
+            Predicted rating in [1, 10].
+        Raises:
+            IndexError: If either ID is outside the fitted matrix."""
 
         scores = self.score_user(user_id)
         if not 0 <= item_id < scores.size:
@@ -258,7 +354,14 @@ class ItemItemCF:
         return float(scores[item_id])
 
     def recommend(self, user_id: int, top_k: int = 10) -> list[tuple[int, float]]:
-        """Return deterministic top-K unseen items as ``(item_id, score)`` pairs."""
+        """Rank games after removing the user's training-rated items.
+
+        Args:
+            user_id: Zero-based fitted user row.
+            top_k: Maximum number of results; nonpositive values return an empty list.
+        Returns:
+            (item_id, score) pairs in descending score order. Item ID breaks ties.
+            The list can be shorter than top_k if too few unseen games remain."""
 
         train, _ = self._require_fit()
         if top_k <= 0:

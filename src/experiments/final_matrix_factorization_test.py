@@ -14,7 +14,13 @@ from src.models.matrix_factorization import MatrixFactorization, MatrixFactoriza
 
 
 def load_frozen_config(path: Path) -> tuple[MatrixFactorizationConfig, dict[str, float]]:
-    """Restore model parameters and validation metrics from the winner file."""
+    """Restore the saved validation winner without selecting new settings.
+
+    Args:
+        path: best-model JSON containing parameter fields and validation metrics.
+
+    Returns:
+        A MatrixFactorizationConfig instance and the saved validation-metric mapping."""
 
     winner = json.loads(path.read_text(encoding="utf-8"))
     config = MatrixFactorizationConfig(
@@ -35,7 +41,15 @@ def load_frozen_config(path: Path) -> tuple[MatrixFactorizationConfig, dict[str,
 
 
 def run_final_test(args: argparse.Namespace) -> dict[str, float]:
-    """Fit the frozen winner and evaluate the test split exactly once."""
+    """Fit the frozen validation winner and evaluate held-out test data.
+
+    Args:
+        args: CLI namespace with train, test, best_config, output_dir, total_users, total_items, top_k and relevant_threshold.
+
+    Returns:
+        The test metric dictionary; final JSON/plots are also written.
+
+    Train and test share an explicit matrix shape. Test metrics are reported after the configuration is fixed and are not used by this function to alter it."""
 
     # Step 1: restore the validation winner without changing any parameter.
     config, validation = load_frozen_config(args.best_config)
@@ -62,6 +76,10 @@ def run_final_test(args: argparse.Namespace) -> dict[str, float]:
 
 
 def main() -> None:
+    """Parse final-test paths and dimensions, then print the test metrics.
+
+    --train and --test select the fixed split CSVs; --best-config restores the validation winner; --output-dir receives results; --total-users/--total-items define matrix shape; --top-k is 10; --relevant-threshold defaults to 8."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train", type=Path, default=Path("data/experiment/train.csv"))
     parser.add_argument("--test", type=Path, default=Path("data/experiment/test.csv"))

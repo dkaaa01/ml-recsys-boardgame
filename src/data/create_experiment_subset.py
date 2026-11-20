@@ -1,8 +1,9 @@
-"""Create a compact, leakage-safe dataset for recommendation experiments.
+"""Create aligned subsets for warm-start recommendation experiments.
 
-Selection statistics are computed from the training split only.  The selected
-user and item IDs are then applied unchanged to validation and test, so future
-information cannot influence which entities enter the experiment dataset.
+Training counts rank games and define activity strata. If an evaluation-user
+file exists, positive counts in every split also determine user eligibility.
+The same compact user/item mappings are applied to all splits. These choices
+condition the evaluated cohort; test ratings never enter model fitting.
 """
 
 from __future__ import annotations
@@ -17,7 +18,11 @@ import numpy as np
 
 
 def count_train_items(train_path: Path) -> Counter[int]:
-    """Count training interactions per item without loading the CSV into memory."""
+    """Count ratings per game in the input training CSV.
+
+    train_path contains user_id/item_id/rating rows. Return a Counter keyed by
+    integer item IDs. Only train rows determine the reduced catalog order.
+    """
 
     counts: Counter[int] = Counter()
     with train_path.open("r", encoding="utf-8", newline="") as source:
@@ -27,7 +32,11 @@ def count_train_items(train_path: Path) -> Counter[int]:
 
 
 def count_train_users(train_path: Path, selected_items: set[int]) -> Counter[int]:
-    """Count each user's training ratings inside the reduced game catalog."""
+    """Count each user's training history within a fixed game catalog.
+
+    train_path is the training CSV and selected_items is the allowed item-ID set.
+    Return a Counter mapping original user IDs to their retained training counts.
+    """
 
     counts: Counter[int] = Counter()
     with train_path.open("r", encoding="utf-8", newline="") as source:
@@ -39,7 +48,11 @@ def count_train_users(train_path: Path, selected_items: set[int]) -> Counter[int
 
 
 def load_eval_users(path: Path) -> set[int] | None:
-    """Load the common ranking cohort when the processed dataset provides one."""
+    """Load the source dataset's ranking-evaluation user IDs.
+
+    path is eval_users.csv. Return its integer user-ID set, or None when the file
+    is absent and no per-split positive eligibility restriction can be applied.
+    """
 
     if not path.exists():
         return None
@@ -53,7 +66,26 @@ def count_relevant_by_split(
     users: set[int],
     threshold: float,
 ) -> dict[str, Counter[int]]:
-    """Count held-out relevant games inside the selected catalog."""
+    """Count positive ratings per user inside a selected game catalog.
+
+    Parameters
+    ----------
+    processed_dir : Path
+        Directory containing train.csv, validation.csv and test.csv.
+    selected_items : set[int]
+        Allowed original game IDs.
+    users : set[int]
+        Original user IDs whose relevant counts are required.
+    threshold : float
+        Inclusive minimum rating considered positive, 8.0 in this project.
+
+    Returns
+    -------
+    dict[str, Counter[int]]
+        Per-user positive counts for each split. Validation/test labels are read
+        only to define users with an evaluable positive in each split; these
+        counts do not become model input or determine game popularity ranks.
+    """
 
     result: dict[str, Counter[int]] = {}
     for split in ("train", "validation", "test"):
@@ -74,7 +106,13 @@ def count_relevant_by_split(
 
 
 def activity_bin(rating_count: int) -> str:
-    """Group users by activity so sampling does not retain only heavy users."""
+    """Map a retained training-rating count to a sampling stratum label.
+
+    rating_count is the number of train ratings inside the selected catalog.
+    Return '20-39' below 40, '40-79' below 80, and '80+' otherwise. The first
+    label reflects the main experiment's minimum of 20; smaller execution samples
+    may include users below 20 under the same label.
+    """
 
     if rating_count < 40:
         return "20-39"
@@ -86,7 +124,25 @@ def activity_bin(rating_count: int) -> str:
 def stratified_user_sample(
     eligible_counts: dict[int, int], sample_size: int, seed: int
 ) -> tuple[list[int], dict[str, dict[str, int]]]:
-    """Sample users proportionally from activity bins with deterministic rounding."""
+    """Sample users in proportion to their training-activity strata.
+
+    Parameters
+    ----------
+    eligible_counts : dict[int, int]
+        Original eligible user IDs and training-rating counts.
+    sample_size : int
+        Requested number of distinct users; must not exceed the eligible count.
+    seed : int
+        Seed for NumPy's deterministic random generator.
+
+    Returns
+    -------
+    tuple[list[int], dict]
+        Sorted chosen IDs and per-stratum eligible/sample counts. Floors of the
+        proportional allocations are filled by largest fractional remainders so
+        the total is exactly sample_size. Each stratum uses sampling without
+        replacement through Generator.choice(..., replace=False).
+    """
 
     if sample_size <= 0:
         raise ValueError("sample_size must be positive")
@@ -134,7 +190,12 @@ def write_filtered_split(
     user_mapping: dict[int, int],
     item_mapping: dict[int, int],
 ) -> int:
-    """Filter one split and compact source IDs to contiguous experiment IDs."""
+    """Write one split restricted to selected users and games.
+
+    source_path is a processed split CSV and output_path is its destination.
+    user_mapping and item_mapping map original integer IDs to compact IDs shared
+    by every split. Return the number of rows written, preserving rating values.
+    """
 
     written = 0
     with source_path.open("r", encoding="utf-8", newline="") as source, output_path.open(
@@ -158,7 +219,12 @@ def write_filtered_split(
 def write_games(
     source_path: Path, output_path: Path, item_mapping: dict[int, int]
 ) -> int:
-    """Write selected metadata and retain the original item ID for traceability."""
+    """Write metadata for the selected games and retain their source IDs.
+
+    source_path is games.csv, output_path is its destination, and item_mapping
+    maps source item IDs to compact experiment IDs. Return the number of rows
+    written. source_item_id records the preceding dataset's ID for traceability.
+    """
 
     written = 0
     with source_path.open("r", encoding="utf-8", newline="") as source, output_path.open(
@@ -191,7 +257,12 @@ def write_users(
     user_mapping: dict[int, int],
     train_counts: Counter[int],
 ) -> None:
-    """Write the compact-to-source user mapping and activity information."""
+    """Write user-ID provenance and training activity for the selected sample.
+
+    output_path is users.csv. selected_users lists source IDs, user_mapping maps
+    those IDs to compact IDs, and train_counts gives their retained training
+    rating counts. The function returns None after writing the mapping/activity CSV.
+    """
 
     with output_path.open("w", encoding="utf-8", newline="") as output:
         writer = csv.writer(output, lineterminator="\n")
@@ -209,6 +280,14 @@ def write_eval_users(
     user_mapping: dict[int, int],
     relevant_counts: dict[str, Counter[int]] | None,
 ) -> None:
+    """Write positive counts for the shared ranking-evaluation cohort.
+
+    output_path is eval_users.csv; selected_users and user_mapping identify the
+    selected source IDs and their compact replacements. relevant_counts maps
+    split names to source-user positive-count Counters. Return None and write
+    nothing if those counts are unavailable; otherwise write all three counts.
+    """
+
     if relevant_counts is None:
         return
     with output_path.open("w", encoding="utf-8", newline="") as output:
@@ -242,7 +321,36 @@ def create_experiment_subset(
     relevant_threshold: float = 8.0,
     seed: int = 42,
 ) -> dict[str, object]:
-    """Create filtered splits, compact mappings, metadata, and a JSON report."""
+    """Create a smaller catalog, user sample, aligned splits and selection report.
+
+    Parameters
+    ----------
+    processed_dir : Path
+        Input splits and games.csv, optionally including eval_users.csv.
+    output_dir : Path
+        Destination for filtered CSVs, ID mappings and subset_report.json.
+    max_items : int
+        Number of games selected by descending training-rating count.
+    max_users : int
+        Exact number of eligible users to sample across training-activity strata.
+    min_user_train_ratings : int
+        Minimum train history inside the selected catalog, 20 in the main run.
+    relevant_threshold : float
+        Inclusive positive-rating cutoff, used only for evaluation eligibility.
+    seed : int
+        Seed controlling the user sample, 42 in the reported experiment.
+
+    Returns
+    -------
+    dict[str, object]
+        Counts, sampling rules, strata and sparsity also written as JSON.
+
+    Game order and activity counts use train only. When eval_users.csv exists,
+    users must also have a positive rating in each reduced split. This eligibility
+    condition inspects validation/test labels and conditions the evaluated cohort;
+    it does not fit model scores or tune parameters on test ratings. The stored
+    metrics therefore describe this retained warm-start cohort.
+    """
 
     train_path = processed_dir / "train.csv"
     validation_path = processed_dir / "validation.csv"
@@ -266,8 +374,9 @@ def create_experiment_subset(
         for user_id, count in train_user_counts.items()
         if count >= min_user_train_ratings
     }
-    # Step 3: require an evaluable liked game in every split when the source
-    # preprocessing run provides a common evaluation cohort.
+    # Ranking metrics require a held-out positive. This cohort filter reads
+    # labels in each split; model fitting and hyperparameter selection do not
+    # receive test ratings. Metrics apply to the retained warm-start users.
     source_eval_users = load_eval_users(processed_dir / "eval_users.csv")
     relevant_counts: dict[str, Counter[int]] | None = None
     if source_eval_users is not None:
@@ -306,7 +415,7 @@ def create_experiment_subset(
 
     # Step 6: record the exact cohort, split sizes, and matrix sparsity.
     report: dict[str, object] = {
-        "selection_source": "train split only",
+        "selection_source": "training catalog/activity counts; per-split positive eligibility when eval_users exists",
         "source_processed_dir": str(processed_dir),
         "users": len(selected_users),
         "items": len(selected_items),
@@ -328,6 +437,14 @@ def create_experiment_subset(
 
 
 def main() -> None:
+    """Build a subset from command-line paths, sizes and eligibility settings.
+
+    The no-argument command parses --processed-dir and --output-dir, --max-items
+    and --max-users, --min-user-train-ratings, --relevant-threshold, and --seed.
+    These names map directly to create_experiment_subset parameters. Print its
+    JSON report and return None; the CLI defaults select 2,000 games/20,000 users.
+    """
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--processed-dir", type=Path, default=Path("data/processed")

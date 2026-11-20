@@ -20,6 +20,19 @@ EXPECTED_MD5 = {
 
 
 def md5sum(path: Path) -> str:
+    """Compute the archive fingerprint without loading it into memory.
+
+    Parameters
+    ----------
+    path : Path
+        Existing archive to read in 1 MiB chunks.
+
+    Returns
+    -------
+    str
+        Hexadecimal MD5 digest for identifying the pinned dataset bytes.
+    """
+
     digest = hashlib.md5()  # noqa: S324 - integrity check, not security
     with path.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
@@ -28,6 +41,28 @@ def md5sum(path: Path) -> str:
 
 
 def download(destination: Path, version: int = 4, force: bool = False) -> Path:
+    """Download and verify a selected BoardGameGeek Reviews archive.
+
+    Parameters
+    ----------
+    destination : Path
+        Local archive path. Its parent directory is created when needed.
+    version : int
+        Kaggle dataset version, 3 or 4. Version 4 is the experiment snapshot.
+    force : bool
+        Replace an existing archive when True. Otherwise reuse it only when its
+        fingerprint matches the requested version.
+
+    Returns
+    -------
+    Path
+        destination after the downloaded archive passes its MD5 check.
+
+    The HTTP response is streamed to a .part file, then moved to destination.
+    An unsupported version raises ValueError, and a mismatched fingerprint raises
+    RuntimeError. Source dataset: https://www.kaggle.com/datasets/jvanelteren/boardgamegeek-reviews
+    """
+
     if version not in EXPECTED_MD5:
         raise ValueError(f"Unsupported dataset version {version}; choose {sorted(EXPECTED_MD5)}")
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -55,6 +90,13 @@ def download(destination: Path, version: int = 4, force: bool = False) -> Path:
 
 
 def main() -> None:
+    """Parse --output, --dataset-version and --force, then download the archive.
+
+    The command accepts no Python arguments and returns None. --output is the
+    archive path, --dataset-version chooses the pinned snapshot, and --force
+    allows replacement of an existing file. argparse validates the version choice.
+    """
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--output",

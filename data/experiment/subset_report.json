@@ -1,5 +1,5 @@
 {
-  "selection_source": "train split only",
+  "selection_source": "training catalog/activity counts; per-split positive eligibility when eval_users exists",
   "source_processed_dir": "data/processed",
   "users": 20000,
   "items": 2000,

@@ -1,4 +1,4 @@
-"""Make top10_test.csv for ALL models (item_cf, mf, content, hybrid).
+"""Make top10_test.csv for the four personalized models (item_cf, mf, content, hybrid).
 
 Run from the repo root:
     python make_top10.py --data-dir data/sample
@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from hybrid import hybrid_scores, top_k, tune_w
-from hybrid_pipeline import build_user_data, final_top10, itemcf_scores_with_evidence
+from hybrid_pipeline import build_user_data, final_top10
 from src.data.loader import load_interactions
 from src.metrics import ndcg_at_k
 from src.models.content_based import (
@@ -32,7 +32,16 @@ LIKED = 8.0
 
 
 def load_config(cls, path: Path):
-    """Build a config dataclass from a best_*.json, ignoring metric columns."""
+    """Restore a model configuration from saved validation-winner JSON.
+
+    Args:
+        cls: Configuration dataclass to construct.
+        path: Winner JSON containing configuration fields and evaluation metadata.
+
+    Returns:
+        An instance of cls; defaults with a warning if the file is missing.
+
+    Only dataclass fields are retained. Integer and float fields are restored from CSV-derived JSON strings."""
     if not path.exists():
         print(f"[warn] {path} not found -> using {cls.__name__} defaults")
         return cls()
@@ -52,11 +61,29 @@ def load_config(cls, path: Path):
 
 
 def count_rows(path: Path, column: str) -> int:
+    """Infer a zero-based matrix dimension from an ID column.
+
+    Args:
+        path: Nonempty headered users.csv or games.csv.
+        column: Integer ID field whose maximum defines the dimension.
+
+    Returns:
+        Maximum observed ID plus one; IDs must match the shared compact mapping."""
+
     with path.open(encoding="utf-8-sig", newline="") as f:
         return max(int(r[column]) for r in csv.DictReader(f)) + 1
 
 
 def relevant_items(matrix, users):
+    """Extract users' held-out games rated at least LIKED (8).
+
+    Args:
+        matrix: Sparse user-by-item validation or test rating matrix.
+        users: Iterable of user rows to inspect.
+
+    Returns:
+        User-to-item-set mapping, omitting users without a qualifying rating."""
+
     out = {}
     for u in users:
         row = matrix.getrow(u)
@@ -67,6 +94,14 @@ def relevant_items(matrix, users):
 
 
 def read_eval_users(path: Path):
+    """Read the saved common ranking cohort when it is available.
+
+    Args:
+        path: Optional CSV with a user_id header.
+
+    Returns:
+        A set of user IDs, or None if the file/header is absent."""
+
     if not path.exists():
         return None
     with path.open(encoding="utf-8-sig", newline="") as f:
@@ -78,6 +113,18 @@ def read_eval_users(path: Path):
 
 
 def single_model_rows(name, score_fn, users, seen_fn, k=10):
+    """Convert a model score function into unseen Top-K CSV rows.
+
+    Args:
+        name: Model label written in each row.
+        score_fn: Callable taking user_id and returning one score per candidate game.
+        users: User IDs whose recommendations are required.
+        seen_fn: Callable returning the games already rated in training by a user.
+        k: Maximum number of unseen games per user.
+
+    Returns:
+        Tuples (name, user_id, item_id, rank), with one-based ranks."""
+
     rows = []
     for u in users:
         scores = np.asarray(score_fn(u), dtype=float)
@@ -88,6 +135,10 @@ def single_model_rows(name, score_fn, users, seen_fn, k=10):
 
 
 def main() -> None:
+    """Fit saved model settings, choose the hybrid weight on validation and export rankings.
+
+    CLI options select --data-dir, --reports-dir, --out-dir and --max-users. Train supplies model fitting, validation supplies hybrid-weight selection, and held-out test ratings define evaluation relevance only. Output top10_test.csv contains four personalized models; scores.csv contains hybrid scores for the same data directory."""
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("data/sample"))
     ap.add_argument("--reports-dir", type=Path, default=Path("reports"))
@@ -109,13 +160,13 @@ def main() -> None:
     mf = MatrixFactorization(
         load_config(MatrixFactorizationConfig, rep / "matrix_factorization/best_mf.json")).fit(train)
 
-    # 1) choose w on validation
+    # Select the hybrid weight using validation relevance only.
     val_rel = relevant_items(valid, range(shape[0]))
     val_users = sorted(val_rel)[: args.max_users]
     best_w, results = tune_w(build_user_data(cf, content, val_users), val_rel, ndcg_at_k)
     print("validation NDCG@10 by w:", {w: round(v, 4) for w, v in results.items()}, "-> w =", best_w)
 
-    # 2) test users: the team's eval_users.csv if present, else users with liked test items
+    # Use the saved common test cohort, or users with relevant test items if absent.
     test_rel = relevant_items(test, range(shape[0]))
     eval_users = read_eval_users(d / "eval_users.csv")
     pool = sorted(eval_users & set(range(shape[0]))) if eval_users else sorted(test_rel)
@@ -127,7 +178,7 @@ def main() -> None:
     rows = []
     rows += single_model_rows("item_cf", cf.score_user, users, seen)
     # MF scores are clipped to 1..10, so many games tie at the maximum. Use the team's own
-    # ranking (_top_items) so the tie handling matches the team's reported MF test result.
+    # ranking (_top_items) to retain the tie handling used in the reported MF test result.
     for u in users:
         for rank, g in enumerate(mf_team_top_items(mf, u, 10), start=1):
             rows.append(("mf", u, int(g), rank))
@@ -151,7 +202,7 @@ def main() -> None:
             for g, v in zip(cand[keep], s):
                 w.writerow((u, int(g), round(float(v), 6)))
 
-    # quick sanity report (test NDCG@10 per model, on users with liked test items)
+    # Report test NDCG@10 for the fixed rankings; these values do not select settings.
     by_model = {}
     for m, u, g, _ in rows:
         by_model.setdefault(m, {}).setdefault(u, []).append(g)

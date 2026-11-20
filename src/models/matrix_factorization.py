@@ -10,7 +10,18 @@ from scipy import sparse
 
 @dataclass(frozen=True)
 class MatrixFactorizationConfig:
-    """Hyperparameters for mini-batch SGD training."""
+    """Configuration for regularized mini-batch matrix factorization.
+
+    Args:
+        factors: Dimension of each learned user and game vector.
+        learning_rate: Positive step size for parameter updates.
+        regularization: Nonnegative L2 penalty on biases and latent factors.
+        epochs: Number of full passes through observed training ratings.
+        batch_size: Maximum number of observations in one update batch.
+        seed: Seed for parameter initialization and observation shuffling.
+        min_rating: Lower bound for accepted ratings and returned predictions.
+        max_rating: Upper bound, strictly greater than min_rating.
+    This frozen record keeps a trial's settings stable throughout training."""
 
     factors: int = 32
     learning_rate: float = 0.01
@@ -22,6 +33,12 @@ class MatrixFactorizationConfig:
     max_rating: float = 10.0
 
     def __post_init__(self) -> None:
+        """Reject invalid dimensions, update settings or rating bounds after construction.
+
+        The dataclass calls this method automatically. It returns None and raises
+        ValueError for a nonpositive factor count, learning rate, epoch count or
+        batch size, a negative penalty, or reversed/equal rating bounds."""
+
         if self.factors <= 0:
             raise ValueError("factors must be positive")
         if self.learning_rate <= 0:
@@ -37,14 +54,22 @@ class MatrixFactorizationConfig:
 
 
 class MatrixFactorization:
-    """Learn user/game embeddings plus user and game rating biases.
+    """Learn a global mean, user/game biases, and latent preference vectors.
 
-    The predicted rating is ``global mean + user bias + item bias + dot
-    product``. Updates use deterministic shuffled mini-batches. ``np.add.at``
-    accumulates repeated user and item gradients without a Python loop.
-    """
+    For user u and game i, the raw estimate is global_mean + user_bias[u]
+    + item_bias[i] + dot(user_factors[u], item_factors[i]). Only observed
+    training cells contribute updates. Entity gradients within a mini-batch
+    are averaged by their occurrence count, then accumulated with np.add.at.
+    The rating estimator and user scorer clip results to the configured scale."""
 
     def __init__(self, config: MatrixFactorizationConfig | None = None) -> None:
+        """Initialize an unfitted model and empty learned state.
+
+        Args:
+            config: Immutable MatrixFactorizationConfig; None selects its defaults.
+        Returns:
+            None. fit() initializes latent arrays and the training error history."""
+
         self.config = config or MatrixFactorizationConfig()
         self.train_: sparse.csr_matrix | None = None
         self.global_mean_: float | None = None
@@ -55,7 +80,16 @@ class MatrixFactorization:
         self.training_rmse_: list[float] = []
 
     def fit(self, ratings: sparse.csr_matrix) -> "MatrixFactorization":
-        """Fit the model to observed cells of a sparse rating matrix."""
+        """Fit latent factors and biases to the observed cells of a rating matrix.
+
+        Args:
+            ratings: Sparse user-by-item matrix. Stored values must be within the
+                configured rating bounds, and missing ratings must be absent.
+        Returns:
+            This fitted model. training_rmse_ stores un-clipped training RMSE at
+            the end of each epoch. The original input matrix is not modified.
+        Raises:
+            ValueError: If the matrix has no observations or ratings exceed bounds."""
 
         train = ratings.tocsr().astype(np.float64)
         if train.nnz == 0:
@@ -88,6 +122,15 @@ class MatrixFactorization:
         global_mean: float,
         generator: np.random.Generator,
     ) -> None:
+        """Allocate zero biases and small seeded Gaussian latent vectors.
+
+        Args:
+            train: Float64 CSR training matrix retained for later seen-item masking.
+            global_mean: Mean of all observed training ratings.
+            generator: NumPy Generator used for both latent-vector draws.
+        Returns:
+            None. User/game arrays have shapes (users, factors)/(items, factors)."""
+
         scale = 0.1 / np.sqrt(self.config.factors)
         self.train_ = train
         self.global_mean_ = global_mean
@@ -106,6 +149,16 @@ class MatrixFactorization:
         items: np.ndarray,
         ratings: np.ndarray,
     ) -> None:
+        """Apply one mean-gradient update per entity in a mini-batch.
+
+        Args:
+            users: One-dimensional array of zero-based user IDs for observed pairs.
+            items: Aligned game IDs, with the same length as users.
+            ratings: Aligned observed ratings, with the same length as users.
+        Returns:
+            None. Learned biases and factors are updated in place. Copies of the
+            pre-update factors ensure user and item steps use the same state."""
+
         assert self.train_ is not None and self.global_mean_ is not None
         assert self.user_bias_ is not None and self.item_bias_ is not None
         assert self.user_factors_ is not None and self.item_factors_ is not None
@@ -144,10 +197,23 @@ class MatrixFactorization:
         )
 
     def _require_fitted(self) -> None:
+        """Raise RuntimeError if training state has not been initialized by fit().
+
+        Returns:
+            None when the model has a retained training matrix."""
+
         if self.train_ is None:
             raise RuntimeError("fit must be called before prediction")
 
     def _raw_predict(self, users: np.ndarray, items: np.ndarray) -> np.ndarray:
+        """Evaluate the bias-plus-dot-product formula without clipping.
+
+        Args:
+            users: Aligned array of valid fitted user IDs.
+            items: Aligned array of valid fitted game IDs.
+        Returns:
+            A rating estimate for each pair. Inputs are internal, already-checked IDs."""
+
         self._require_fitted()
         assert self.global_mean_ is not None
         assert self.user_bias_ is not None and self.item_bias_ is not None
@@ -160,7 +226,16 @@ class MatrixFactorization:
         )
 
     def predict_pairs(self, users, items) -> np.ndarray:
-        """Predict aligned user/item arrays and clip to the rating scale."""
+        """Predict aligned user/game IDs and clip each estimate to the rating scale.
+
+        Args:
+            users: Array-like user IDs, with any shape supported by np.asarray.
+            items: Array-like game IDs with exactly the same shape as users.
+        Returns:
+            NumPy array of clipped predictions with that same shape.
+        Raises:
+            ValueError: If input shapes differ.
+            IndexError: If an ID is outside the fitted matrix."""
 
         user_ids = np.asarray(users, dtype=np.int64)
         item_ids = np.asarray(items, dtype=np.int64)
@@ -182,7 +257,15 @@ class MatrixFactorization:
         )
 
     def score_user(self, user_id: int) -> np.ndarray:
-        """Return predicted ratings for every catalog item for one user."""
+        """Predict ratings for the complete fitted catalog for a single user.
+
+        Args:
+            user_id: Zero-based fitted user row.
+        Returns:
+            One-dimensional array with one clipped prediction per game. Seen
+            games remain present so a ranking caller can apply its own exclusion.
+        Raises:
+            IndexError: If user_id is outside the fitted matrix."""
 
         self._require_fitted()
         assert self.train_ is not None
@@ -194,7 +277,14 @@ class MatrixFactorization:
 
 
 def _inverse_frequency(ids: np.ndarray, size: int) -> np.ndarray:
-    """Normalize repeated IDs so each entity receives one mean batch update."""
+    """Give each repeated entity a reciprocal frequency for this batch.
+
+    Args:
+        ids: One-dimensional nonnegative entity IDs in the batch.
+        size: Total number of entities, used as bincount's minimum output size.
+    Returns:
+        One weight per input position. Summing the weighted contributions of
+        a repeated ID therefore gives its mean gradient, rather than its sum."""
 
     counts = np.bincount(ids, minlength=size)
     return 1.0 / counts[ids]

@@ -17,7 +17,14 @@ from src.models.matrix_factorization import MatrixFactorization, MatrixFactoriza
 
 
 def build_trial_configs(trials: int, seed: int) -> list[MatrixFactorizationConfig]:
-    """Create deterministic random-search trials with one stable reference."""
+    """Build repeatable random-search configurations including a fixed reference.
+
+    Args:
+        trials: Positive number of distinct configurations to return.
+        seed: Random-search and model-initialization seed.
+
+    Returns:
+        MatrixFactorizationConfig objects drawn from the documented finite search space."""
 
     if trials <= 0:
         raise ValueError("trials must be positive")
@@ -44,7 +51,13 @@ def build_trial_configs(trials: int, seed: int) -> list[MatrixFactorizationConfi
 
 
 def selection_key(row: dict[str, object]) -> tuple[float, float, float, float]:
-    """Prefer ranking quality, then recall, lower error, and coverage."""
+    """Order validation trials by ranking quality and tie-break metrics.
+
+    Args:
+        row: Trial mapping containing ndcg_at_10, recall_at_10, rmse and coverage.
+
+    Returns:
+        A tuple maximizing NDCG, then recall, then negative RMSE, then coverage."""
 
     return (
         float(row["ndcg_at_10"]), float(row["recall_at_10"]),
@@ -53,7 +66,15 @@ def selection_key(row: dict[str, object]) -> tuple[float, float, float, float]:
 
 
 def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
-    """Train each configuration, evaluate it, and persist the search result."""
+    """Fit the predetermined MF trials and freeze the best validation result.
+
+    Args:
+        args: CLI namespace with train/validation paths, output_dir, matrix dimensions, sample_users, trials, top_k, relevance threshold and seed.
+
+    Returns:
+        A list of configuration/metric rows; winner JSON and plots are also saved.
+
+    The test split is never opened by this validation-search entry point."""
 
     if not 0 < args.sample_users <= args.total_users:
         raise ValueError("sample_users must be between 1 and total_users")
@@ -78,6 +99,19 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
 
 
 def _run_trial(trial, config, train, validation, relevant, top_k) -> dict[str, object]:
+    """Fit and score one MF configuration while measuring elapsed time.
+
+    Args:
+        trial: Integer trial label for the output row.
+        config: MatrixFactorizationConfig for this trial.
+        train: Sparse training matrix.
+        validation: Aligned sparse validation matrix.
+        relevant: Validation-relevant item sets keyed by user.
+        top_k: Recommendation-list length passed to evaluate.
+
+    Returns:
+        A row containing configuration, validation metrics, training RMSE and durations."""
+
     print(f"Trial {trial}: {config}")
     started = time.perf_counter()
     model = MatrixFactorization(config).fit(train)
@@ -93,6 +127,10 @@ def _run_trial(trial, config, train, validation, relevant, top_k) -> dict[str, o
 
 
 def main() -> None:
+    """Parse MF validation-search settings and print the winning row.
+
+    Options choose train/validation CSVs, output directory, matrix size, sampled users, trial count, Top-10 evaluation, relevance threshold and random seed."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train", type=Path, default=Path("data/experiment/train.csv"))
     parser.add_argument(

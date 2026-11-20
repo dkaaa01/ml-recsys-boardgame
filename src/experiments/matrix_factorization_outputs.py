@@ -23,7 +23,12 @@ def save_search_outputs(
     best: dict[str, object],
     output_dir: Path,
 ) -> None:
-    """Save all tuning trials, the winner, and three diagnostic plots."""
+    """Save MF validation trials, the selected row and three diagnostic plots.
+
+    Args:
+        rows: All trial/configuration/metric mappings.
+        best: Validation winner selected by the search ordering.
+        output_dir: Directory receiving CSV, JSON and PNG outputs."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(output_dir / "mf_trials.csv", rows)
@@ -42,7 +47,15 @@ def save_final_outputs(
     fit_seconds: float,
     evaluation_seconds: float,
 ) -> None:
-    """Save final test metrics and a validation-versus-test plot."""
+    """Persist frozen-model validation/test metrics and their comparison plot.
+
+    Args:
+        output_dir: Destination directory.
+        config: Frozen model configuration dataclass.
+        validation: Saved validation metrics.
+        test: Held-out test metrics.
+        fit_seconds: Measured model-fitting time in seconds.
+        evaluation_seconds: Measured held-out-scoring time in seconds."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_json(
@@ -60,6 +73,12 @@ def save_final_outputs(
 
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
+    """Write nonempty rectangular result rows with a header and LF line endings.
+
+    Args:
+        path: Destination UTF-8 CSV path.
+        rows: Rows sharing the first row's keys."""
+
     with path.open("w", encoding="utf-8", newline="") as output:
         writer = csv.DictWriter(output, fieldnames=list(rows[0]), lineterminator="\n")
         writer.writeheader()
@@ -67,10 +86,22 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 def _write_json(path: Path, payload: object) -> None:
+    """Write an indented UTF-8 JSON result with a trailing newline.
+
+    Args:
+        path: Destination file path.
+        payload: JSON-serializable result object."""
+
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def _plot_ranking_metrics(rows: list[dict[str, object]], path: Path) -> None:
+    """Plot Recall, NDCG and coverage by MF validation trial.
+
+    Args:
+        rows: Trial rows with trial and ranking-metric fields.
+        path: Destination PNG path."""
+
     positions = np.arange(len(rows))
     figure, axes = plt.subplots(3, 1, figsize=(max(10, len(rows)), 10), sharex=True)
     for axis, metric, label, color in (
@@ -90,6 +121,12 @@ def _plot_ranking_metrics(rows: list[dict[str, object]], path: Path) -> None:
 
 
 def _plot_error_vs_ranking(rows: list[dict[str, object]], path: Path) -> None:
+    """Plot validation RMSE against NDCG, labeled by MF trial.
+
+    Args:
+        rows: Trial rows with rmse, ndcg_at_10 and trial.
+        path: Destination PNG path."""
+
     figure, axis = plt.subplots(figsize=(8, 6))
     for row in rows:
         x, y = float(row["rmse"]), float(row["ndcg_at_10"])
@@ -104,6 +141,14 @@ def _plot_error_vs_ranking(rows: list[dict[str, object]], path: Path) -> None:
 
 
 def _plot_hyperparameters(rows: list[dict[str, object]], path: Path) -> None:
+    """Plot MF validation NDCG against learning rate with factors and regularization.
+
+    Args:
+        rows: Trial rows containing model parameters and validation metrics.
+        path: Destination PNG path.
+
+    Marker size encodes factor count and color encodes regularization strength."""
+
     figure, axis = plt.subplots(figsize=(9, 6))
     scatter = axis.scatter(
         [float(row["learning_rate"]) for row in rows],
@@ -127,6 +172,13 @@ def _plot_validation_vs_test(
     test: dict[str, float],
     path: Path,
 ) -> None:
+    """Plot frozen-model validation and test metrics on separate scales.
+
+    Args:
+        validation: Saved validation RMSE, recall, NDCG and coverage.
+        test: Held-out metrics with the same keys.
+        path: Destination PNG path."""
+
     metrics = ("rmse", "recall_at_10", "ndcg_at_10", "coverage")
     labels = ("RMSE ↓", "Recall@10 ↑", "NDCG@10 ↑", "Coverage ↑")
     figure, axes = plt.subplots(2, 2, figsize=(10, 7))

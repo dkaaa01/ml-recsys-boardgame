@@ -31,12 +31,25 @@ LABELS = {
 
 
 def read_rows(path):
+    """Stream one CSV row at a time as dictionaries.
+
+    Args:
+        path: Headered UTF-8 CSV to read.
+
+    Returns:
+        An iterator of string-valued column dictionaries."""
+
     with path.open(encoding="utf-8-sig", newline="") as source:
         yield from csv.DictReader(source)
 
 
 def load_test_protocol():
-    """Check the cohort and holdout before scoring any recommendations."""
+    """Validate the common catalog, training exclusions and test relevance sets.
+
+    Returns:
+        catalog (item ID to BGG ID), seen (user to training-item set), counts (training item counts), and relevant (user to test items rated at least 8).
+
+    The input paths are fixed by DATA. Duplicate/overlapping observations and mismatches against eval_users.csv raise ValueError before any metric is computed."""
     catalog = {int(row["item_id"]): row["bgg_id"] for row in read_rows(DATA / "games.csv")}
     expected_positives = {
         int(row["user_id"]): int(row["test_relevant_count"])
@@ -69,6 +82,13 @@ def load_test_protocol():
 
 
 def load_model_rankings():
+    """Read the four saved personalized Top-10 lists from RANKINGS.
+
+    Returns:
+        Nested mappings model -> user -> item IDs ordered by their saved rank.
+
+    Unknown model labels, duplicate ranks and ranks outside 1..10 raise ValueError. evaluate() separately checks that each user has exactly ten unique unseen recommendations."""
+
     expected_models = set(LABELS) - {"bayesian_popularity"}
     ranked = defaultdict(lambda: defaultdict(dict))
     for row in read_rows(RANKINGS):
@@ -87,7 +107,18 @@ def load_model_rankings():
 
 
 def popularity_rankings(catalog, seen, counts, users):
-    """Reuse the team's training-only Bayesian ranking and apply the common seen-item filter."""
+    """Apply each user's training-seen exclusions to a shared Bayesian ranking.
+
+    Args:
+        catalog: Shared mapping of compact item IDs to BGG IDs.
+        seen: Training-item sets keyed by user ID.
+        counts: Training rating counts, used to validate popularity.csv.
+        users: Iterable of users requiring Top-10 lists.
+
+    Returns:
+        User-to-ranked-item lists containing up to TOP_K unseen games.
+
+    The saved ranking must cover the exact catalog and match the training counts. Individual lists can differ because users have different seen games, although the underlying item scores are global."""
     rows = sorted(read_rows(DATA / "popularity.csv"), key=lambda row: int(row["rank"]))
     if [int(row["rank"]) for row in rows] != list(range(1, len(catalog) + 1)):
         raise ValueError("The popularity list does not rank the complete common catalog.")
@@ -104,6 +135,13 @@ def popularity_rankings(catalog, seen, counts, users):
 
 
 def evaluate():
+    """Recalculate the five-model test comparison from saved rankings.
+
+    Returns:
+        Metric rows, number of ranking users, and number of candidate games.
+
+    Every model uses the same users, catalog, seen-item exclusions and rating>=8 relevance rule. Player-count and time conditions are absent from this offline comparison."""
+
     catalog, seen, counts, relevant = load_test_protocol()
     rankings = load_model_rankings()
     rankings["bayesian_popularity"] = popularity_rankings(catalog, seen, counts, relevant)
@@ -126,11 +164,29 @@ def evaluate():
 
 
 def format_coverage(value):
+    """Format a catalog fraction as a percentage with one decimal place.
+
+    Args:
+        value: Coverage fraction in the range 0..1.
+
+    Returns:
+        A percent string rounded with Decimal ROUND_HALF_UP."""
+
     percent = Decimal(str(value)) * 100
     return f"{percent.quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)}%"
 
 
 def save_chart(results, users, games, path):
+    """Plot saved comparison metrics on three separate horizontal bar panels.
+
+    Args:
+        results: Model rows containing model, recall_at_10, ndcg_at_10 and coverage.
+        users: Evaluation user count displayed in the chart subtitle.
+        games: Candidate game count displayed in the chart subtitle.
+        path: Destination PNG path.
+
+    FigureCanvasAgg renders the chart without requiring an interactive display."""
+
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
 
@@ -165,6 +221,10 @@ def save_chart(results, users, games, path):
 
 
 def main():
+    """Write the verified comparison CSV and PNG, then print the metric table.
+
+    Inputs are data/experiment and outputs/top10_test.csv. Files are written under reports/comparison. This entry point recomputes metrics from fixed predictions and performs no model tuning."""
+
     results, users, games = evaluate()
     REPORT.mkdir(parents=True, exist_ok=True)
     with (REPORT / "test_metrics.csv").open("w", encoding="utf-8", newline="") as target:

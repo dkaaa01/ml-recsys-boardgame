@@ -1,38 +1,30 @@
-# 보드게임 추천 모델 통합 보고서
+# Experiment outputs
 
-## 실험 범위
+[Team2_Outputs.pdf](Team2_Outputs.pdf) collects the experiment summary, model comparison, descriptive plots, model-search results and terminal demonstration outputs.
 
-2025 전처리 데이터에서 학습 데이터의 통계만 사용해 사용자 20,000명과
-게임 2,000개를 선정했다. 검증·테스트 정보는 사용자나 게임의 인기 순위를
-정하는 데 사용하지 않았다.
+## Common final comparison
 
-| 구분 | 평점 수 | 사용 목적 |
-| --- | ---: | --- |
-| 학습 | 1,599,055 | 모델 학습 |
-| 검증 | 215,504 | 설정 선택 |
-| 테스트 | 214,663 | 고정된 설정의 최종 1회 평가 |
+The experiment contains 20,000 users, 2,000 games and 2,029,222 ratings. Catalog/activity selection uses training counts. Evaluation eligibility additionally requires a positive rating in each split. Ratings of at least 8 count as relevant. Every model recommends 10 games after excluding each user's training-rated games.
 
-평점 8점 이상을 관련 게임으로 정의하고 RMSE, Recall@10, NDCG@10,
-Coverage를 측정했다. 세 개인화 모델 모두 검증 데이터로 설정을 고른 뒤
-고정했으며, 테스트 데이터는 마지막에 한 번만 평가했다.
+| Model | Recall@10 | NDCG@10 | Catalog coverage |
+| --- | ---: | ---: | ---: |
+| Bayesian popularity | 0.0692 | 0.0530 | 3.0% |
+| Hybrid | 0.0554 | 0.0463 | 89.3% |
+| ItemCF | 0.0499 | 0.0413 | 98.6% |
+| Content-based | 0.0438 | 0.0352 | 81.6% |
+| Matrix factorization | 0.0239 | 0.0197 | 80.6% |
 
-## 최종 테스트 결과
+The Bayesian baseline leads both ranking metrics on this split. Hybrid leads the four personalized models. ItemCF reaches the largest share of the catalog. Coverage is the union of games recommended across users.
 
-| 모델 | RMSE ↓ | Recall@10 ↑ | NDCG@10 ↑ | Coverage ↑ |
-| --- | ---: | ---: | ---: | ---: |
-| ItemCF (Pearson) | 1.4797 | **0.0499** | **0.0413** | **0.9860** |
-| Matrix Factorization | **1.2512** | 0.0239 | 0.0197 | 0.8060 |
-| Content-based | 1.3258 | 0.0438 | 0.0352 | 0.8155 |
+The comparison CSV and chart are produced by the final_model_comparison module. It checks the common cohort, candidates, seen-item exclusion and saved rankings before calculating the metrics. Recalculation uses frozen rankings and does not tune on test results.
 
-- ItemCF는 Pearson, 이웃 20개, 최소 공통 평가 3개, shrinkage 0,
-  baseline-residual scoring이 검증 NDCG@10 기준 최종 설정이다.
-- Matrix Factorization은 잠재요인 32개, 학습률 0.02, 정규화 0.01,
-  18 epoch가 최종 설정이다.
-- Content-based는 설명 TF-IDF 4,000개와 카테고리·메커니즘 태그 271개를
-  같은 비중으로 결합한 설정이다.
-- Bayesian popularity는 ItemCF 검증 실험의 대조군으로만 사용했으며,
-  validation Recall@10 0.0673, NDCG@10 0.0515를 기록했다.
+## Model-specific files
 
-세부 산출물은 [`item_cf`](item_cf),
-[`matrix_factorization`](matrix_factorization),
-[`content_based`](content_based)에 있다.
+- eda/ contains exploratory plots for the 248,457-user, 3,000-game processed dataset.
+- baseline/ contains the training-only Bayesian score ordering and prior settings.
+- item_cf/, matrix_factorization/ and content_based/ contain validation searches, frozen settings, held-out metrics and figures. ItemCF trial plots include its Bayesian validation control.
+- hybrid/ contains recorded demo screens. The CLI uses the separate 200-user, 200-game sample. Guest scores are training counts, while profiles use saved hybrid scores.
+
+Player/time filters apply to the demo. The final five-model comparison evaluates the common unseen catalog without these filters. The recorded search and test results use one fixed split; they do not establish statistical significance or live-user satisfaction.
+
+Source files contain parameter and return-value documentation. [Code explanations and references](../docs/code_explanations.md) explain the architecture and library APIs.

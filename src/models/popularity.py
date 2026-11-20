@@ -10,7 +10,15 @@ from pathlib import Path
 
 
 def percentile(values: list[int], quantile: float) -> float:
-    """Calculate a percentile without an external dependency."""
+    """Interpolate a training-count quantile between adjacent sorted values.
+
+    Args:
+        values: Non-empty list of observed item rating counts.
+        quantile: Fraction in [0, 1], such as 0.75 for the 75th percentile.
+    Returns:
+        Linearly interpolated count, which can be non-integral.
+    Raises:
+        ValueError: If values is empty."""
     if not values:
         raise ValueError("Cannot calculate a percentile from an empty list.")
     ordered = sorted(values)
@@ -22,7 +30,12 @@ def percentile(values: list[int], quantile: float) -> float:
 
 
 def load_game_names(games_path: Path) -> dict[int, tuple[str, str]]:
-    """Map the internal item ID to the BGG ID and game name."""
+    """Read the metadata identifiers and display names used in a ranking.
+
+    Args:
+        games_path: UTF-8 CSV containing item_id, bgg_id and name.
+    Returns:
+        Mapping from each internal integer item ID to (BGG ID, game name)."""
     games: dict[int, tuple[str, str]] = {}
     with games_path.open("r", encoding="utf-8", newline="") as source:
         for row in csv.DictReader(source):
@@ -35,11 +48,21 @@ def rank_popular_games(
     games_path: Path,
     prior_quantile: float = 0.75,
 ) -> tuple[list[dict[str, object]], dict[str, float]]:
-    """Rank games using only training ratings.
+    """Rank games by a training-only Bayesian weighted mean.
 
-    The Bayesian score lowers the rank of games with very few ratings while
-    keeping highly rated and well-supported games near the top.
-    """
+    For count n, item mean R, training global mean C and prior count m, the
+    score is n*R/(n+m) + m*C/(n+m). Here m is the specified quantile of
+    training item counts. This is a shrinkage baseline, not BGG's official rank.
+
+    Args:
+        train_path: CSV with user_id, item_id and rating; only training is read.
+        games_path: CSV containing the metadata for the same item IDs.
+        prior_quantile: Quantile in [0, 1] used to set the prior count m.
+    Returns:
+        Ordered ranking rows and the global mean/prior settings. Only games
+        with a training rating are ranked. Ties use count, then game name.
+    Raises:
+        ValueError: If train_path contains no ratings."""
     rating_sum: dict[int, float] = defaultdict(float)
     rating_count: dict[int, int] = defaultdict(int)
     global_sum = 0.0
@@ -94,7 +117,15 @@ def write_popularity_outputs(
     *,
     csv_output: Path | None = None,
 ) -> None:
-    """Write the report copy and, optionally, the team handoff CSV."""
+    """Save a readable ranking and the constants used to calculate it.
+
+    Args:
+        ranking: Ordered rows returned by rank_popular_games.
+        metadata: Global mean, prior count and quantile for those rows.
+        output_dir: Destination for popular_games.csv and popularity_report.json.
+        csv_output: Optional second path for the same ranking CSV.
+    Returns:
+        None. Parent directories are created when required."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_popularity_csv(ranking, output_dir / "popular_games.csv")
@@ -108,7 +139,13 @@ def write_popularity_outputs(
 def _write_popularity_csv(
     ranking: list[dict[str, object]], output_path: Path
 ) -> None:
-    """Write one stable ranking schema for reports and team handoff."""
+    """Write a ranking with one-based ranks and six-decimal score columns.
+
+    Args:
+        ranking: Ordered dictionaries containing the popularity output fields.
+        output_path: CSV destination; its parent directory is created.
+    Returns:
+        None. The file is overwritten with a header and all ranking rows."""
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="") as output:
@@ -139,7 +176,14 @@ def recommend_unseen_games(
     seen_item_ids: set[int],
     top_k: int = 10,
 ) -> list[dict[str, object]]:
-    """Return the highest-ranked games that the user has not rated."""
+    """Select the highest-ranked games absent from the user's training history.
+
+    Args:
+        ranking: Global popularity rows already in descending score order.
+        seen_item_ids: Internal IDs already rated by this user in training.
+        top_k: Positive maximum number of rows to return.
+    Returns:
+        Ranking rows in their original order, up to top_k when available."""
     recommendations: list[dict[str, object]] = []
     for row in ranking:
         if int(row["item_id"]) in seen_item_ids:
@@ -151,6 +195,11 @@ def recommend_unseen_games(
 
 
 def main() -> None:
+    """Read command-line paths and prior quantile, write the ranking, and print its top 10.
+
+    No Python arguments are accepted. Run python -m src.models.popularity
+    --help for the CSV input and output options."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--train", type=Path, default=Path("data/experiment/train.csv")

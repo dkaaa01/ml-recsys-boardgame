@@ -32,7 +32,10 @@ METRIC_FIELDS = ("rmse", "recall_at_10", "ndcg_at_10", "coverage")
 
 
 def build_trial_configs() -> list[ContentConfig]:
-    """Compare description-heavy, balanced, and tag-heavy feature combinations."""
+    """Construct the six vocabulary-size and description-weight combinations.
+
+    Returns:
+        ContentConfig objects using 2,000/4,000 terms and weights 0.25/0.50/0.75; other settings retain their config defaults."""
 
     return [
         ContentConfig(
@@ -45,7 +48,13 @@ def build_trial_configs() -> list[ContentConfig]:
 
 
 def selection_key(row: dict[str, object]) -> tuple[float, float, float, float]:
-    """Prefer ranking quality, then recall, lower error, and coverage."""
+    """Order validation trials by ranking quality and tie-break metrics.
+
+    Args:
+        row: Trial mapping containing ndcg_at_10, recall_at_10, rmse and coverage.
+
+    Returns:
+        A tuple maximizing NDCG, recall, negative RMSE and coverage in that order."""
 
     return (
         float(row["ndcg_at_10"]),
@@ -63,7 +72,17 @@ def evaluate(
     *,
     batch_size: int,
 ) -> dict[str, float]:
-    """Measure held-out rating error and unseen Top-K ranking quality."""
+    """Measure content-model rating error and unseen Top-K ranking quality.
+
+    Args:
+        model: Fitted content model with its training matrix retained.
+        held_out: Sparse held-out ratings aligned with the fitted model.
+        relevant: Held-out relevant-item sets keyed by user.
+        top_k: Recommendation-list length, fixed at 10 in the CLI.
+        batch_size: Number of users scored together by the content recommender.
+
+    Returns:
+        RMSE, mean recall/NDCG, coverage and evaluated counts."""
 
     if model.train_ is None:
         raise RuntimeError("model must be fitted before evaluation")
@@ -90,7 +109,15 @@ def evaluate(
 
 
 def run_tuning(args: argparse.Namespace) -> list[dict[str, object]]:
-    """Tune only on train and validation; never open the test file."""
+    """Evaluate six content feature settings using train and validation only.
+
+    Args:
+        args: CLI namespace with train, validation, games, matrix dimensions, relevant_threshold, top_k, batch_size and output_dir.
+
+    Returns:
+        Configuration and validation-metric rows; the best configuration and plots are saved.
+
+    Feature vocabulary is built from game metadata; preference profiles are built from training ratings. The test split is not opened during tuning."""
 
     # Step 1: load train and validation only; tuning never opens the test file.
     shape = (args.total_users, args.total_items)
@@ -136,7 +163,13 @@ def run_tuning(args: argparse.Namespace) -> list[dict[str, object]]:
 
 
 def run_final_test(args: argparse.Namespace) -> dict[str, float]:
-    """Evaluate the frozen validation winner once and export ranked content scores."""
+    """Evaluate the saved content configuration and export compact item scores.
+
+    Args:
+        args: CLI namespace with best_config, train/test/games paths, matrix dimensions, relevant_threshold, top_k, batch_size, output_dir, scores_output and export_top_k.
+
+    Returns:
+        Held-out test metrics; JSON, comparison plot and Top-K score CSV are written."""
 
     # Step 1: restore the already-frozen validation winner without searching.
     winner = json.loads(args.best_config.read_text(encoding="utf-8"))
@@ -187,7 +220,16 @@ def export_content_scores(
     top_k: int,
     batch_size: int,
 ) -> None:
-    """Write compact per-user Top-K scores instead of a 40-million-row dense file."""
+    """Write compact per-user recommendation scores to CSV.
+
+    Args:
+        model: Fitted content model to score.
+        user_ids: User IDs to export.
+        output_path: Destination CSV with user_id, item_id, rank and content_score.
+        top_k: Maximum score rows exported per user.
+        batch_size: Number of user profiles evaluated in one scoring batch.
+
+    Only ranked unseen games are exported; this avoids writing the full user-by-item score matrix."""
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="") as output:
@@ -207,6 +249,13 @@ def save_tuning_outputs(
     best: dict[str, object],
     output_dir: Path,
 ) -> None:
+    """Save content validation trials, the winner and feature-weight plots.
+
+    Args:
+        rows: All validation trial/configuration rows.
+        best: Winning row selected on validation metrics.
+        output_dir: Directory receiving CSV, JSON and diagnostic PNGs."""
+
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(output_dir / "content_trials.csv", rows)
     _write_json(output_dir / "best_content.json", best)
@@ -265,6 +314,16 @@ def save_final_outputs(
     fit_seconds: float,
     evaluation_seconds: float,
 ) -> None:
+    """Persist frozen-model validation/test metrics and their comparison plot.
+
+    Args:
+        output_dir: Destination directory.
+        config: Frozen model configuration dataclass.
+        validation: Saved validation metrics.
+        test: Held-out test metrics.
+        fit_seconds: Measured model-fitting time in seconds.
+        evaluation_seconds: Measured held-out-scoring time in seconds."""
+
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_json(
         output_dir / "final_test_metrics.json",
@@ -297,6 +356,12 @@ def save_final_outputs(
 
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
+    """Write nonempty rectangular result rows with a header and LF line endings.
+
+    Args:
+        path: Destination UTF-8 CSV path.
+        rows: Rows sharing the first row's keys."""
+
     with path.open("w", encoding="utf-8", newline="") as output:
         writer = csv.DictWriter(output, fieldnames=list(rows[0]), lineterminator="\n")
         writer.writeheader()
@@ -304,10 +369,20 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 def _write_json(path: Path, payload: object) -> None:
+    """Write an indented UTF-8 JSON result with a trailing newline.
+
+    Args:
+        path: Destination file path.
+        payload: JSON-serializable result object."""
+
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def main() -> None:
+    """Run content tuning or final testing according to --mode.
+
+    Shared CLI options specify split/game paths, matrix dimensions, Top-10 evaluation, relevance threshold, batch size and output directory. Final mode additionally reads --best-config and writes --scores-output with up to --export-top-k rows per user."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("tune", "final"), default="tune")
     parser.add_argument("--train", type=Path, default=Path("data/experiment/train.csv"))

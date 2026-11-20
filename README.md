@@ -2,6 +2,48 @@
 
 This machine learning project builds personalized board game recommendations from BoardGameGeek (BGG) user ratings.
 
+## Run the submitted project
+
+Use Python 3.10 or later. From the repository root:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m src.experiments.final_model_comparison
+.venv/bin/python recommend_cli.py --data-dir data/sample --scores outputs/scores.csv
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+On Windows, use `.venv\Scripts\python.exe` for the virtual environment's Python.
+The committed experiment CSVs and saved Top-10 rankings support the final comparison
+without downloading the original archive or retraining the models. The CLI uses the
+separate 200-user, 200-game sample and its saved hybrid scores.
+
+Source functions contain argument and return-value explanations. The
+[code explanations and references](docs/code_explanations.md) describe the complete
+architecture, library APIs, parameter meanings and implementation choices.
+
+## Final five-model comparison
+
+| Model | Recall@10 | NDCG@10 | Catalog coverage |
+| --- | ---: | ---: | ---: |
+| Bayesian popularity | 0.0692 | 0.0530 | 3.0% |
+| Hybrid | 0.0554 | 0.0463 | 89.3% |
+| ItemCF | 0.0499 | 0.0413 | 98.6% |
+| Content-based | 0.0438 | 0.0352 | 81.6% |
+| Matrix factorization | 0.0239 | 0.0197 | 80.6% |
+
+These are the common held-out results for 20,000 users and 2,000 games. Training-rated
+games are excluded, and test ratings of at least 8 count as relevant. Player/time
+filters apply to the demo. The comparison command verifies the saved rankings and
+writes its CSV and chart under `reports/comparison/`.
+
+![Final model comparison](reports/comparison/test_comparison.png)
+
+The consolidated submission outputs are in
+[Team2_Outputs.pdf](reports/Team2_Outputs.pdf). Model-specific raw figures, search
+tables, frozen settings and metric JSON files remain available under `reports/`.
+
 ## Dataset Selection
 
 This project uses the **2025 snapshot** of
@@ -48,15 +90,19 @@ unzip -j data/raw/boardgamegeek-reviews.zip \
 
 ### Assignment experiment subset
 
-The original processed dataset is preserved. A smaller experiment dataset is
-selected using **training-split statistics only** to avoid validation/test
-leakage:
+The original processed dataset is preserved. The smaller experiment catalog and
+user activity groups use training-split counts:
 
 - 2,000 games with the most training ratings
 - users with at least 20 training ratings inside that catalog
 - 20,000 users sampled proportionally from activity groups `20-39`, `40-79`,
   and `80+`
 - compact zero-based IDs written separately under `data/experiment/`
+
+The ranking cohort also requires at least one rating of 8 or above in each split.
+Held-out labels therefore determine evaluation eligibility. They do not determine
+training-count popularity or model fitting. The split is a positive-preserving,
+user-aware holdout, rather than a chronological forecast.
 
 ```bash
 .venv/bin/python -m src.data.create_experiment_subset \
@@ -68,11 +114,11 @@ leakage:
 
 The generated experiment subset contains **2,029,222 interactions**: 1,599,055 train,
 215,504 validation, and 214,663 test interactions. It has 20,000 evaluation
-users, 2,000 games, and 94.93% matrix sparsity. Generated CSV files remain
-excluded from Git; the selection code, report schema, and reproduction command
-are versioned.
+users, 2,000 games, and 94.93% matrix sparsity. These experiment CSVs are committed
+under `data/experiment/`. The large raw archive and 3,000-game intermediate dataset
+are excluded from Git and can be rebuilt with the preprocessing commands.
 
-### Team handoff files
+### Shared input files
 
 The train-only Bayesian ranking is generated with the same 20,000-user ×
 2,000-game experiment scope:
@@ -93,7 +139,8 @@ selection rules, file schema, counts, and reproduction commands.
 ## Project Structure
 
 ```text
-data/                     Local datasets (excluded from Git)
+data/                     Committed experiment/sample CSVs; raw files excluded
+docs/                     Code explanations, library APIs and references
 reports/                  Model reports, metrics, and figures
 src/data/                 Download, preprocessing, loading, and EDA
 src/models/               Popularity, ItemCF, Matrix Factorization, and content models
@@ -117,7 +164,7 @@ lecture: cosine, adjusted cosine, Pearson-style correlation, and Jaccard
 similarity. It also includes a Bayesian popularity control.
 
 ```bash
-# Tune on the 20,000-user train/validation data. Test remains untouched.
+# Tune on the 20,000-user train/validation data. Test is excluded from configuration search.
 .venv/bin/python -m src.experiments.item_cf_experiment
 
 # Run only after freezing the validation winner. This evaluates the held-out

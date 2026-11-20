@@ -9,7 +9,14 @@ from src.metrics import catalog_coverage, ndcg_at_k, recall_at_k, rmse, validate
 
 
 def find_relevant_items(ratings, threshold: float) -> dict[int, set[int]]:
-    """Return each user's held-out items whose rating meets the threshold."""
+    """Find held-out games meeting the binary relevance threshold.
+
+    Args:
+        ratings: Sparse user-by-item validation or test rating matrix.
+        threshold: Inclusive minimum rating for a relevant game.
+
+    Returns:
+        A user-to-item-set mapping containing only users with relevant games."""
 
     relevant: dict[int, set[int]] = {}
     for user_id in np.flatnonzero(ratings.getnnz(axis=1)):
@@ -26,7 +33,18 @@ def evaluate(
     relevant: dict[int, set[int]],
     top_k: int,
 ) -> dict[str, float]:
-    """Measure rating error, Top-K quality, and catalog coverage."""
+    """Measure observed-rating RMSE and unseen Top-K ranking performance.
+
+    Args:
+        model: Fitted MatrixFactorization with its training matrix retained.
+        held_out: Sparse held-out ratings using the training matrix shape and IDs.
+        relevant: Held-out relevant-item sets keyed by user.
+        top_k: Recommendation-list length, fixed at 10 by the experiment CLI.
+
+    Returns:
+        RMSE, mean recall/NDCG, catalog coverage and evaluated counts.
+
+    RMSE uses all observed held-out ratings. Ranking metrics use only users in relevant and exclude their training-rated games."""
 
     train = model.train_
     if train is None:
@@ -54,7 +72,17 @@ def evaluate(
 
 
 def _top_items(model: MatrixFactorization, user_id: int, top_k: int) -> list[int]:
-    """Return deterministic Top-K unseen items for one user."""
+    """Select unseen games using the MF evaluator's fixed partial-sort procedure.
+
+    Args:
+        model: Fitted matrix-factorization model supplying one score per game.
+        user_id: User row to score and to look up training-seen items.
+        top_k: Maximum returned games.
+
+    Returns:
+        Ranked integer game IDs.
+
+    Training games are masked with negative infinity. argpartition selects the shortlist, then lexsort orders it by score and ID; this exact selection procedure is reused by make_top10.py to retain the reported MF tie behavior."""
 
     assert model.train_ is not None
     scores = model.score_user(user_id)

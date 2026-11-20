@@ -1,4 +1,4 @@
-"""Leakage-safe preprocessing for the 2025 BoardGameGeek Reviews data.
+"""Prepare common evaluation splits from the 2025 BoardGameGeek Reviews data.
 
 The raw review file is larger than memory, so duplicate and conflicting ratings
 are resolved in a temporary SQLite database.  Catalog selection uses provisional
@@ -45,10 +45,23 @@ METADATA_ALIASES: dict[str, tuple[str, ...]] = {
 
 
 def normalized_header(name: str | None) -> str:
+    """Normalize an optional CSV header for alias matching.
+
+    name is a header string or None. Return lowercase text with outer whitespace
+    removed and spaces changed to underscores; None becomes an empty string.
+    """
+
     return (name or "").strip().lower().replace(" ", "_")
 
 
 def resolve_column(fieldnames: Iterable[str | None], aliases: tuple[str, ...]) -> str:
+    """Find an original CSV column name by its normalized aliases.
+
+    fieldnames contains actual header values and aliases is an ordered tuple of
+    accepted normalized names. Return the first matching original column name;
+    raise ValueError when no required alias is present.
+    """
+
     lookup = {normalized_header(field): field for field in fieldnames}
     for alias in aliases:
         if alias in lookup and lookup[alias] is not None:
@@ -60,16 +73,37 @@ def resolve_column(fieldnames: Iterable[str | None], aliases: tuple[str, ...]) -
 
 @dataclass(frozen=True)
 class Interaction:
+    """Hold one user's observation before integer IDs are assigned.
+
+    item is the original game-ID string and rating is the observed 1-10 score.
+    The frozen dataclass prevents accidental edits during deterministic splitting.
+    """
+
     item: str
     rating: float
 
 
 def stable_bucket(user: str, item: str, seed: int, salt: str = "split") -> int:
+    """Assign a reproducible bucket to a user/game pair.
+
+    user and item are original string IDs, seed fixes the experiment, and salt
+    separates split/positive/repair ordering. Return an integer from 0 through 9
+    from an eight-byte BLAKE2b digest. Buckets below 8 form provisional training,
+    8 validation and 9 test; this is an approximately 80/10/10 random split,
+    with explicit per-user repairs performed later.
+    """
+
     payload = f"{seed}\0{salt}\0{user}\0{item}".encode("utf-8")
     return int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "big") % 10
 
 
 def sha256sum(path: Path) -> str:
+    """Return the SHA-256 hexadecimal fingerprint of path.
+
+    path is an existing input or generated CSV. Read four MiB at a time so source
+    and output fingerprints can be recorded without loading the files into RAM.
+    """
+
     digest = hashlib.sha256()
     with path.open("rb") as source:
         for chunk in iter(lambda: source.read(4 * 1024 * 1024), b""):
@@ -78,6 +112,13 @@ def sha256sum(path: Path) -> str:
 
 
 def locate_source_files(raw_dir: Path) -> tuple[Path, Path]:
+    """Locate the rating and metadata CSV pair beneath raw_dir.
+
+    Return (ratings_path, metadata_path), taking the lexicographically last match
+    for bgg-*-reviews.csv and games_detailed_info*.csv. Raise FileNotFoundError
+    when either pattern has no match. Reproduction uses the version-4 archive.
+    """
+
     ratings = sorted(raw_dir.glob("bgg-*-reviews.csv"))
     metadata = sorted(raw_dir.glob("games_detailed_info*.csv"))
     if not ratings:
@@ -88,6 +129,12 @@ def locate_source_files(raw_dir: Path) -> tuple[Path, Path]:
 
 
 def _numeric_rating(value: str | None) -> float | None:
+    """Parse a raw CSV rating and enforce the inclusive 1-10 range.
+
+    value may be missing or nonnumeric. Return a finite float for a valid rating,
+    or None for missing, unparseable, nonfinite or out-of-range cells.
+    """
+
     try:
         rating = float(value or "nan")
     except ValueError:
@@ -96,6 +143,14 @@ def _numeric_rating(value: str | None) -> float | None:
 
 
 def _connect(database: Path) -> sqlite3.Connection:
+    """Open the disposable SQLite cleaning database at database.
+
+    Return a Connection with an observations table keyed by (user, item, rating).
+    WITHOUT ROWID avoids a second row-ID index. File-backed temporary storage and
+    a 256 MiB page cache limit RAM use. synchronous=OFF speeds this rebuildable
+    work database, which is never treated as the permanent source of truth.
+    """
+
     connection = sqlite3.connect(database)
     connection.execute("PRAGMA journal_mode=DELETE")
     connection.execute("PRAGMA synchronous=OFF")
@@ -121,7 +176,27 @@ def ingest_ratings(
     *,
     batch_size: int = 50_000,
 ) -> dict[str, int]:
-    """Load valid observations and retain duplicate occurrence counts."""
+    """Validate and deduplicate the raw observations in a disk-backed database.
+
+    Parameters
+    ----------
+    ratings_path : Path
+        Raw CSV with user, game and rating columns resolved through aliases.
+    database_path : Path
+        Disposable SQLite file, replaced when it already exists.
+    batch_size : int
+        Number of valid rows per executemany transaction, default 50,000.
+
+    Returns
+    -------
+    dict[str, int]
+        Raw/invalid/duplicate/conflicting/clean row counts. The database also
+        receives clean_ratings with one observation per surviving user/game pair.
+
+    Bound SQL parameters supply values safely. ON CONFLICT counts repeated equal
+    ratings, while GROUP BY/HAVING rejects all observations for a user/game pair
+    with multiple different ratings. An exact duplicate alone is retained once.
+    """
 
     if database_path.exists():
         database_path.unlink()
@@ -200,6 +275,15 @@ def ingest_ratings(
 
 
 def load_metadata(metadata_path: Path) -> tuple[dict[str, dict[str, str]], list[str]]:
+    """Resolve game metadata headers and index the retained rows by original ID.
+
+    metadata_path is the raw metadata CSV. Return (metadata, missing_optional),
+    where metadata maps original game IDs to normalized field dictionaries and
+    missing_optional lists absent fields. Require name, description, player
+    limits and maximum playtime columns. Empty IDs and repeated IDs are skipped;
+    the first row of each game is retained and absent optional cells become ''.
+    """
+
     metadata: dict[str, dict[str, str]] = {}
     with metadata_path.open("r", encoding="utf-8-sig", newline="") as source:
         reader = csv.DictReader(source)
@@ -230,6 +314,12 @@ def load_metadata(metadata_path: Path) -> tuple[dict[str, dict[str, str]], list[
 
 
 def _valid_positive_number(value: str) -> float | None:
+    """Return a finite positive float parsed from the CSV cell value.
+
+    Return None for an unparseable/nonfinite/non-positive cell, including the
+    zero markers used for missing player-count and playtime metadata.
+    """
+
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -238,6 +328,15 @@ def _valid_positive_number(value: str) -> float | None:
 
 
 def condition_validity(row: dict[str, str]) -> tuple[bool, str]:
+    """Check whether metadata supports player-count and playtime filtering.
+
+    row supplies min_players/max_players/min_playtime/max_playtime strings.
+    Return (eligible, reason), with semicolon-separated invalid_player_range or
+    invalid_playtime_range reasons. Both interval endpoints must be positive and
+    the maximum cannot be smaller than the minimum. Invalid games can remain in
+    offline experiments while condition_eligible excludes them from the demo.
+    """
+
     min_players = _valid_positive_number(row["min_players"])
     max_players = _valid_positive_number(row["max_players"])
     min_time = _valid_positive_number(row["min_playtime"])
@@ -258,6 +357,29 @@ def select_catalog(
     max_items: int,
     seed: int,
 ) -> tuple[list[str], Counter[str], dict[str, int]]:
+    """Choose a metadata-backed catalog using provisional training counts.
+
+    Parameters
+    ----------
+    database_path : Path
+        SQLite database containing deduplicated clean_ratings.
+    metadata_ids : set[str]
+        Game IDs with a metadata row available for joining.
+    min_item_train_ratings : int
+        Minimum provisional train observations per game, 100 in the main run.
+    max_items : int
+        Catalog cap, 3,000 before the later experiment reduction.
+    seed : int
+        Seed used by stable_bucket to identify provisional train rows.
+
+    Returns
+    -------
+    tuple[list[str], Counter[str], dict[str, int]]
+        Selected original IDs, all eligible train-count entries and audit counts.
+        Games sort by decreasing count, breaking ties by original ID. These counts
+        precede the positive-preserving per-user split repair.
+    """
+
     train_counts: Counter[str] = Counter()
     missing_metadata_rows = 0
     connection = sqlite3.connect(database_path)
@@ -293,6 +415,14 @@ def select_users(
     min_user_train_ratings: int,
     seed: int,
 ) -> tuple[set[str], Counter[str]]:
+    """Choose users with enough provisional train history in the fixed catalog.
+
+    database_path contains clean_ratings and selected_items lists original game
+    IDs. min_user_train_ratings is the required provisional count and seed fixes
+    the hash split. Return (eligible_user_IDs, train_counts). Temporary SQL tables
+    join selected games without reading the complete ratings table into memory.
+    """
+
     connection = sqlite3.connect(database_path)
     connection.execute("CREATE TEMP TABLE selected_items(item TEXT PRIMARY KEY)")
     connection.executemany("INSERT INTO selected_items(item) VALUES (?)", ((x,) for x in selected_items))
@@ -322,6 +452,33 @@ def _split_user(
     relevant_threshold: float,
     min_train_ratings: int,
 ) -> dict[str, list[Interaction]]:
+    """Create reproducible train/validation/test lists for one user.
+
+    Parameters
+    ----------
+    user : str
+        Original user ID for stable hashing.
+    interactions : list[Interaction]
+        This user's deduplicated observations in the selected catalog.
+    seed : int
+        Hash seed for split assignment and deterministic repair ordering.
+    relevant_threshold : float
+        Inclusive cutoff for a positive observation, 8.0 in the experiment.
+    min_train_ratings : int
+        Minimum training count sought by moving non-protected holdout rows.
+
+    Returns
+    -------
+    dict[str, list[Interaction]]
+        Item-sorted train/validation/test observations. When at least three
+        positives exist, deterministically place one in every split, then repair
+        short training histories while protecting a held-out positive per split.
+
+    Positive labels are inspected when constructing this stratified holdout.
+    Consequently the split is neither chronological nor a completely independent
+    random assignment, and its 80/10/10 proportions can change during repair.
+    """
+
     result = {"train": [], "validation": [], "test": []}
     for interaction in interactions:
         bucket = stable_bucket(user, interaction.item, seed)
@@ -373,6 +530,14 @@ def _iter_selected_user_rows(
     selected_items: list[str],
     selected_users: set[str],
 ) -> Iterator[tuple[str, list[Interaction]]]:
+    """Yield selected observations grouped by original user ID.
+
+    database_path contains clean_ratings; selected_items and selected_users are
+    the original IDs to retain. Yield (username, list[Interaction]) in user/game
+    order. SQL temporary-table joins perform the filtering and only one user's
+    interactions are accumulated at a time. The connection closes on completion.
+    """
+
     connection = sqlite3.connect(database_path)
     connection.execute("CREATE TEMP TABLE selected_items(item TEXT PRIMARY KEY)")
     connection.execute("CREATE TEMP TABLE selected_users(user TEXT PRIMARY KEY)")
@@ -414,6 +579,38 @@ def write_outputs(
     relevant_threshold: float,
     min_user_train_ratings: int,
 ) -> dict[str, object]:
+    """Write aligned cleaned splits, mapping files and evaluation eligibility.
+
+    Parameters
+    ----------
+    database_path : Path
+        SQLite clean_ratings input.
+    output_dir : Path
+        Directory created for train/validation/test, user/item/game mappings and
+        eval_users.csv. Existing files with these names are replaced.
+    selected_items : list[str]
+        Catalog IDs in fixed order, defining compact item IDs.
+    selected_users : set[str]
+        Original users satisfying the provisional activity requirement.
+    provisional_train_counts : Counter[str]
+        Pre-repair game counts recorded in items.csv for traceability.
+    metadata : dict[str, dict[str, str]]
+        Normalized game fields keyed by original game ID.
+    seed : int
+        Seed for per-user holdout assignment and repairs.
+    relevant_threshold : float
+        Positive cutoff used to record eligibility/counts in eval_users.csv.
+    min_user_train_ratings : int
+        Required final training count; users below it after repair are skipped.
+
+    Returns
+    -------
+    dict[str, object]
+        Written user/item/evaluation counts, split sizes and invalid-condition
+        reason counts. Evaluation users have at least one positive in each split;
+        all models share the resulting cohort and ID mappings.
+    """
+
     output_dir.mkdir(parents=True, exist_ok=True)
     item_ids = {item: item_id for item_id, item in enumerate(selected_items)}
     handles = {
@@ -538,6 +735,39 @@ def preprocess(
     seed: int = 42,
     keep_database: bool = False,
 ) -> dict[str, object]:
+    """Run validation, metadata joins, entity selection and common splitting.
+
+    Parameters
+    ----------
+    raw_dir : Path
+        Directory with the extracted rating and game-metadata CSVs.
+    output_dir : Path
+        Destination for cleaned CSVs and preprocessing_report.json.
+    work_dir : Path or None
+        Dedicated disposable workspace, default output_dir/.work. The routine
+        creates dedup.sqlite3 here and removes this entire directory on success
+        unless keep_database is True; use an empty project-owned directory.
+    min_user_train_ratings : int
+        Provisional/final minimum history per user, default 10.
+    min_item_train_ratings : int
+        Provisional train support per game, default 100.
+    max_items : int
+        Cap on selected games, default 3,000.
+    relevant_threshold : float
+        Inclusive positive cutoff for split repair and evaluation, default 8.0.
+    seed : int
+        Hash seed, default 42.
+    keep_database : bool
+        Preserve work_dir for inspecting cleaning tables when True.
+
+    Returns
+    -------
+    dict[str, object]
+        Cleaning counts, settings, split sizes, timings and source/output hashes,
+        also written as JSON. This pipeline reads labels for positive-preserving
+        split construction; subsequent model fitting uses the emitted train split.
+    """
+
     started = time.perf_counter()
 
     # Step 1: resolve the two source CSVs and prepare disk-backed work storage.
@@ -553,8 +783,9 @@ def preprocess(
     cleaning = ingest_ratings(ratings_path, database_path)
     ingest_seconds = time.perf_counter() - ingest_started
     metadata, missing_metadata_fields = load_metadata(metadata_path)
-    # Step 3: select games and users using provisional train-only counts so
-    # validation and test information cannot influence the experiment cohort.
+    # Step 3: choose the initial catalog and activity-qualified users using
+    # provisional training counts. Positive-preserving split construction and
+    # the later ranking-evaluation eligibility check also inspect rating labels.
     selected_items, item_train_counts, catalog_stats = select_catalog(
         database_path,
         set(metadata),
@@ -627,6 +858,14 @@ def preprocess(
 
 
 def main() -> None:
+    """Run preprocess from command-line paths and filtering settings.
+
+    This no-argument command parses --raw-dir, --output-dir, --work-dir,
+    --min-user-train-ratings, --min-item-train-ratings, --max-items,
+    --relevant-threshold, --seed and --keep-database. Each maps to the same-named
+    preprocess parameter. Print the JSON audit report and return None.
+    """
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--raw-dir", type=Path, default=Path("data/raw"))
     parser.add_argument("--output-dir", type=Path, default=Path("data/processed"))

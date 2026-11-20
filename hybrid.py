@@ -1,12 +1,9 @@
-"""Weighted hybrid (ItemCF + content) skeleton following the team plan.
+"""Weighted hybrid ranking from aligned ItemCF and content scores.
 
-One user at a time. All arrays are aligned to the same candidate games.
-
-Plan rules implemented here
-- Normalize each model's scores to 0-1 per user, over the same candidates.
-- Games with no ItemCF evidence get an ItemCF score of 0 when combined.
-- hybrid = w * knn + (1 - w) * content, with w chosen on validation.
-- Games the user already rated in train are excluded from the Top-K.
+Scores are min-max normalized separately for each user over the same unseen
+candidates. ItemCF scores lacking neighbor evidence contribute zero. The
+collaborative weight is selected on validation data before final test scoring.
+See docs/code_explanations.md for the library APIs and algorithm references.
 """
 
 from __future__ import annotations
@@ -15,9 +12,14 @@ import numpy as np
 
 
 def minmax_01(scores, mask=None) -> np.ndarray:
-    """Scale scores to 0-1. If `mask` is given, only True entries are scaled
-    and the rest stay 0. If max == min, everything is 0 (avoids dividing by 0).
-    """
+    """Normalize eligible scores to [0, 1], with excluded positions left at zero.
+
+    Args:
+        scores: One-dimensional score array for a single user's candidates.
+        mask: Optional aligned boolean eligibility mask, e.g. ItemCF evidence.
+    Returns:
+        Float array of the same shape. If no entry is eligible or all eligible
+        scores are equal, every output is zero to avoid division by zero."""
     scores = np.asarray(scores, dtype=float)
     out = np.zeros_like(scores)
     use = np.ones(scores.shape, dtype=bool) if mask is None else np.asarray(mask, dtype=bool)
@@ -30,14 +32,32 @@ def minmax_01(scores, mask=None) -> np.ndarray:
 
 
 def hybrid_scores(knn, content, has_evidence, w: float) -> np.ndarray:
-    """w is the collaborative (ItemCF) weight: w * knn + (1 - w) * content."""
+    """Combine per-user normalized collaborative and content evidence.
+
+    Args:
+        knn: ItemCF scores aligned to the current candidate games.
+        content: Aligned raw content cosine scores.
+        has_evidence: Aligned mask marking ItemCF scores with usable neighbors.
+        w: ItemCF weight in [0, 1]; content receives 1 - w.
+    Returns:
+        Aligned weighted scores w*ItemCF_norm + (1-w)*content_norm. ItemCF
+        positions without evidence contribute zero, excluding popularity fallback."""
     knn_n = minmax_01(knn, mask=has_evidence)  # no evidence -> stays 0
     content_n = minmax_01(content)
     return w * knn_n + (1.0 - w) * content_n
 
 
 def top_k(scores, candidates, exclude=(), k: int = 10) -> list[tuple[int, float]]:
-    """Return [(game_id, score), ...]. Ties are broken by smaller game id."""
+    """Select highest finite candidate scores after optional exclusions.
+
+    Args:
+        scores: One-dimensional scores aligned to candidates.
+        candidates: Item IDs in the same order as scores.
+        exclude: Collection of item IDs already rated or otherwise ineligible.
+        k: Positive maximum number of returned games.
+    Returns:
+        (item_id, score) pairs sorted by descending score, then ascending ID.
+        Infinite masked entries are omitted, so fewer than k may be returned."""
     candidates = np.asarray(candidates)
     scores = np.asarray(scores, dtype=float).copy()
     if len(exclude):
@@ -48,20 +68,26 @@ def top_k(scores, candidates, exclude=(), k: int = 10) -> list[tuple[int, float]
 
 
 def tune_w(users: dict, relevant: dict, ndcg_fn, weights=(0.25, 0.50, 0.75), k: int = 10):
-    """Pick the weight with the best validation NDCG@10.
+    """Select the collaborative weight using validation NDCG@K.
 
-    users:    {user_id: {"candidates", "knn", "content", "has_evidence", "exclude"}}
-    relevant: {user_id: set(liked game ids)}
-    ndcg_fn:  ndcg_fn(recommendations, relevant, k) -> float
-              (same call shape as the repo's metrics.ndcg_at_k usage)
-    """
+    Args:
+        users: Mapping from user ID to aligned candidates, knn, content,
+            has_evidence arrays and an exclude collection of train-seen IDs.
+        relevant: Validation relevant-item sets keyed by user ID.
+        ndcg_fn: Function accepting (recommendations, relevant, k), returning
+            the user-averaged validation NDCG. No test labels belong here.
+        weights: Candidate ItemCF weights; the first wins an exact score tie.
+        k: Positive recommendation cutoff.
+    Returns:
+        (best_weight, results), where results maps every tried weight to its
+        validation NDCG. Seen games are removed before score normalization."""
     results = {}
     for w in weights:
         recommendations = {}
         for user_id, data in users.items():
             if user_id not in relevant:
                 continue
-            # Drop already-rated games first, then normalize (plan order).
+            # Remove train-seen games before fitting the per-user score ranges.
             all_candidates = np.asarray(data["candidates"])
             keep = ~np.isin(all_candidates, list(data["exclude"]))
             scores = hybrid_scores(
@@ -78,7 +104,7 @@ def tune_w(users: dict, relevant: dict, ndcg_fn, weights=(0.25, 0.50, 0.75), k: 
 
 
 if __name__ == "__main__":
-    # The A/B/C example from the walkthrough (w = 0.75).
+    # Numerical check for three candidates at w = 0.75.
     candidates = [1, 2, 3]                  # A, B, C
     knn = [9.0, 5.0, 7.5]                   # C's 7.5 is a popularity fallback
     content = [0.4, 0.6, 0.5]

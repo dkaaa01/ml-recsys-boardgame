@@ -33,13 +33,18 @@ SIMILARITIES = ("cosine", "adjusted_cosine", "pearson", "jaccard")
 
 
 def build_trial_configs(trials: int, seed: int, sample_users: int, total_users: int) -> list[ItemCFConfig]:
-    """Create conditional random-search trials while guaranteeing all 4 methods.
+    """Schedule balanced conditional random-search trials for four similarities.
 
-    Scikit-learn's ``RandomizedSearchCV`` assumes a conventional estimator and a
-    single row-wise score.  Recommendation evaluation instead needs per-user
-    top-K lists and conditional parameters (``positive_threshold`` matters only
-    to Jaccard), so the small search scheduler is explicit here.
-    """
+    Args:
+        trials: Number of configurations, at least four so every similarity is represented.
+        seed: Seed for repeatable draws from the parameter space.
+        sample_users: User count for this run, used to choose support ranges.
+        total_users: Full matrix user count; smaller samples use lower support thresholds.
+
+    Returns:
+        Unique ItemCFConfig objects, with round-robin allocation across similarity families.
+
+    The explicit scheduler supports per-user Top-K evaluation and a Jaccard-only positive threshold. Candidate sets and trial settings are decided before validation metrics are seen."""
 
     if trials < len(SIMILARITIES):
         raise ValueError(f"trials must be at least {len(SIMILARITIES)}")
@@ -88,12 +93,18 @@ def build_local_grid(
     total_users: int,
     max_trials: int,
 ) -> list[ItemCFConfig]:
-    """Create a small grid around the best random-search configuration.
+    """Construct a capped neighborhood around the random-search winner.
 
-    Full Cartesian grid search repeats many obviously distant combinations.
-    This local grid changes only neighboring values of K, minimum support, and
-    shrinkage, then caps the number of refinements for predictable runtime.
-    """
+    Args:
+        best: ItemCFConfig selected by validation in the random stage.
+        sample_users: Number of users included in this run.
+        total_users: Full user count used to distinguish a small execution check.
+        max_trials: Maximum refinements; zero or less returns an empty list.
+
+    Returns:
+        Nearby ItemCFConfig objects changing neighbors, overlap or shrinkage.
+
+    One-parameter changes are ordered before combinations of changes; settings outside these three dimensions stay fixed."""
 
     if max_trials <= 0:
         return []
@@ -102,6 +113,15 @@ def build_local_grid(
     shrinkage_space = (0.0, 10.0, 25.0, 100.0) if sample_users < total_users else (0.0, 25.0, 100.0, 250.0)
 
     def nearby(space, value):
+        """Select an ordered grid value and its immediate neighbors.
+
+        Args:
+            space: Ordered tuple of allowed parameter values.
+            value: Current value, which must occur in space.
+
+        Returns:
+            A tuple slice containing the value and adjacent allowed values."""
+
         index = space.index(value)
         return space[max(0, index - 1) : min(len(space), index + 2)]
 
@@ -135,7 +155,16 @@ def build_local_grid(
 
 
 def validation_targets(validation, relevant_threshold: float) -> tuple[dict[int, set[int]], list[int]]:
-    """Return binary relevance sets and users that have validation interactions."""
+    """Build binary relevance sets and the list of users with held-out observations.
+
+    Args:
+        validation: Sparse held-out user-by-item rating matrix.
+        relevant_threshold: Inclusive minimum rating considered relevant.
+
+    Returns:
+        A user-to-relevant-items mapping and user IDs having any held-out rating.
+
+    The same helper is used for validation and frozen test evaluation; users without a relevant item still contribute rating-prediction observations."""
 
     relevant: dict[int, set[int]] = {}
     users: list[int] = []
@@ -155,7 +184,19 @@ def evaluate_model(
     validation_users: list[int],
     top_k: int,
 ) -> tuple[dict[str, float], dict[int, list[int]]]:
-    """Evaluate rating error and top-K quality without recomputing user scores."""
+    """Score observed ratings and unseen recommendations for one fitted ItemCF.
+
+    Args:
+        model: Fitted ItemItemCF retaining its training matrix.
+        validation: Aligned sparse held-out ratings; may be validation or final test.
+        relevant: Held-out positive item sets for ranking users.
+        validation_users: Users with held-out observations for RMSE calculation.
+        top_k: Maximum unseen recommendations per ranking user.
+
+    Returns:
+        A metric dictionary and user-to-ranked-item lists.
+
+    Only training-rated games are excluded. Held-out positives remain candidates, and item IDs break score ties."""
 
     actual: list[float] = []
     predicted: list[float] = []
@@ -201,7 +242,19 @@ def evaluate_model(
 def bayesian_popularity_result(
     train, validation, relevant, validation_users, top_k: int
 ) -> dict[str, object]:
-    """Evaluate a train-only Bayesian popularity control under the same protocol."""
+    """Evaluate a training-only Bayesian popularity baseline under the CF protocol.
+
+    Args:
+        train: Sparse training ratings used for counts, means and seen-game exclusions.
+        validation: Aligned held-out ratings to evaluate.
+        relevant: Held-out relevant games keyed by ranking user.
+        validation_users: Users with held-out observations for RMSE.
+        top_k: Maximum unseen recommendations per ranking user.
+
+    Returns:
+        A baseline row containing rating/ranking metrics and evaluated counts.
+
+    The prior weight is the 75th percentile of positive item-rating counts. Each item mean is shrunk toward the global training mean."""
 
     counts = np.asarray(train.getnnz(axis=0), dtype=float)
     sums = np.asarray(train.sum(axis=0)).ravel()
@@ -249,7 +302,14 @@ def bayesian_popularity_result(
 def write_results(
     rows: list[dict[str, object]], output_dir: Path, *, full_validation: bool = False
 ) -> None:
-    """Write machine-readable search results and three presentation-ready plots."""
+    """Save validation search evidence, freeze its winner and create diagnostic plots.
+
+    Args:
+        rows: Normalized baseline and ItemCF trial rows.
+        output_dir: Directory receiving trial CSV, winner JSON, plots and summary.
+        full_validation: Whether every user in the reduced experiment cohort was included.
+
+    The winner maximizes validation NDCG, then recall and coverage. Large searches are condensed only for plotting; the CSV retains every row."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
     fieldnames = list(rows[0])
@@ -450,6 +510,16 @@ reason to inspect the test set. {next_step}
 
 
 def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
+    """Run balanced ItemCF validation search followed by local refinement.
+
+    Args:
+        args: CLI namespace containing train/validation paths, output_dir, matrix size, sample_users, trials, grid_trials, top_k, relevant_threshold and seed.
+
+    Returns:
+        All normalized baseline and trial rows; reports are also written.
+
+    The test split is not loaded. User sampling is seeded, and final settings are chosen from validation metrics."""
+
     if not 0 < args.sample_users <= args.total_users:
         raise ValueError("sample_users must be between 1 and total_users")
     # Step 1: load the deterministic user cohort from train and validation only.
@@ -476,6 +546,15 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
     configs = build_trial_configs(args.trials, args.seed, args.sample_users, args.total_users)
 
     def run_config(trial: int, stage: str, config: ItemCFConfig) -> None:
+        """Append one fitted ItemCF validation trial to the enclosing result list.
+
+        Args:
+            trial: Unique integer trial number.
+            stage: Search-stage label, random or grid.
+            config: ItemCFConfig fitted for this trial.
+
+        Uses the enclosing training/validation matrices, relevance sets and CLI settings; records fitting and evaluation durations."""
+
         print(f"{stage.title()} trial {trial}: {config}")
         fit_started = time.perf_counter()
         model = ItemItemCF(config).fit(train)
@@ -532,6 +611,10 @@ def run_experiment(args: argparse.Namespace) -> list[dict[str, object]]:
 
 
 def main() -> None:
+    """Parse ItemCF search settings and print the selected validation row.
+
+    CLI options choose train/validation CSVs, output directory, matrix size, sampled user count, random/local-grid trial counts, Top-10 evaluation, relevance threshold and seed."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train", type=Path, default=Path("data/experiment/train.csv"))
     parser.add_argument(

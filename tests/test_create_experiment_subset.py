@@ -52,7 +52,10 @@ class CreateExperimentSubsetTest(unittest.TestCase):
 
             self.assertEqual(report["users"], 2)
             self.assertEqual(report["items"], 2)
-            self.assertEqual(report["selection_source"], "train split only")
+            self.assertEqual(
+                report["selection_source"],
+                "training catalog/activity counts; per-split positive eligibility when eval_users exists",
+            )
             self.assertEqual(json.loads((output / "subset_report.json").read_text())["seed"], 42)
 
             with (output / "train.csv").open(encoding="utf-8") as source:

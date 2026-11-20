@@ -20,7 +20,12 @@ from src.models.popularity import rank_popular_games
 
 
 def to_float(value: str) -> float | None:
-    """Convert a CSV value to float and treat zero as missing metadata."""
+    """Parse positive numeric game metadata.
+
+    value is a CSV cell. Return its float value when greater than zero, or None
+    for an unparseable/non-positive cell. Zero playtime and player counts are
+    missing-data markers in this dataset.
+    """
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -29,7 +34,12 @@ def to_float(value: str) -> float | None:
 
 
 def list_length(value: str) -> int:
-    """Count values stored as a Python-style list string."""
+    """Count entries in a metadata list encoded as text.
+
+    value is a string such as "['Economic', 'Negotiation']". Return the list
+    length, or 0 when parsing fails or the decoded value is not a list.
+    ast.literal_eval accepts literal containers without executing Python code.
+    """
     try:
         parsed = ast.literal_eval(value)
     except (SyntaxError, ValueError):
@@ -38,7 +48,13 @@ def list_length(value: str) -> int:
 
 
 def collect_interaction_stats(processed_dir: Path) -> dict[str, object]:
-    """Collect counts without loading all interactions into memory."""
+    """Count users, games, ratings and split sizes in one pass per CSV.
+
+    processed_dir contains train.csv, validation.csv and test.csv. Return a
+    dictionary with per-user, per-item and per-rating Counters, split counts,
+    entity totals and sparsity. Sparsity is 1 - observed/(users * games), using
+    all three splits. The files must contain unique user-game pairs across splits.
+    """
     user_counts: Counter[int] = Counter()
     item_counts: Counter[int] = Counter()
     rating_counts: Counter[float] = Counter()
@@ -67,7 +83,12 @@ def collect_interaction_stats(processed_dir: Path) -> dict[str, object]:
 
 
 def collect_metadata_stats(games_path: Path) -> dict[str, list[float]]:
-    """Collect numeric metadata used by EDA plots."""
+    """Collect the metadata values used in the exploration plots.
+
+    games_path is the processed games.csv. Return lists keyed by publication
+    year, complexity, maximum playtime, category count and mechanic count.
+    Positive numeric cells are retained, and missing numeric cells are skipped.
+    """
     result = {
         "year_published": [],
         "complexity": [],
@@ -92,7 +113,24 @@ def save_plots(
     popular_ranking: list[dict[str, object]],
     output_dir: Path,
 ) -> None:
-    """Save the main EDA figures as PNG files."""
+    """Write four exploratory figures from the collected statistics.
+
+    Parameters
+    ----------
+    interaction_stats : dict
+        Output of collect_interaction_stats, including count Counters.
+    metadata_stats : dict[str, list[float]]
+        Output of collect_metadata_stats.
+    popular_ranking : list[dict]
+        Training-only Bayesian ranking with name and popularity_score fields.
+    output_dir : Path
+        Directory created for interaction/rating/metadata distributions and the
+        top-ten Bayesian popularity chart.
+
+    Returns None. Matplotlib histograms show distributions, bar/barh show counts
+    or ranked scores, and scatter compares category/mechanic counts. Decimal
+    ratings are grouped into half-point bins for the rating-distribution figure.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     plt.style.use("seaborn-v0_8-whitegrid")
 
@@ -145,6 +183,13 @@ def save_plots(
 
 
 def main() -> None:
+    """Create EDA PNGs and an aggregate JSON summary from processed CSVs.
+
+    This no-argument command parses --processed-dir (input splits and metadata)
+    and --output-dir (figure/summary destination), then returns None. The Bayesian
+    ranking used in its final figure is computed from train.csv only.
+    """
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--processed-dir", type=Path, default=Path("data/processed")

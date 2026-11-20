@@ -1,19 +1,13 @@
-"""Terminal board-game recommender (skeleton).
+"""Recommend board games that fit a requested group size and playtime.
 
-Flow (team plan, page 1):
-  1. profile name (Enter = guest)
-  2. number of players and maximum play time
-  3. Top-K list: personalized (from a score file) or guest popularity
+Existing profiles use saved hybrid scores and exclude training-rated games.
+Guests use the number of training ratings as their popularity ranking. The
+CSV inputs are games.csv, users.csv, train.csv and an optional scores.csv.
 
-Input files (columns follow the repo's preprocess.py output)
-  games.csv   item_id, name, min_players, max_players, min_playtime, max_playtime
-  users.csv   user_id, username
-  train.csv   user_id, item_id, rating
-  scores.csv  user_id, item_id, score      <- hybrid scores (optional for now)
+Run the BGG execution sample from the repository root with:
+    python recommend_cli.py --data-dir data/sample --scores outputs/scores.csv
 
-Try it without any real data:
-  python recommend_cli.py --make-sample sample_data
-  python recommend_cli.py --data-dir sample_data
+--make-sample writes a separate synthetic fixture for input/filter checks.
 """
 
 from __future__ import annotations
@@ -26,11 +20,28 @@ from pathlib import Path
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
+    """Read a headered UTF-8 CSV, accepting an optional byte-order mark.
+
+    Args:
+        path: CSV file to read.
+
+    Returns:
+        A list of rows keyed by column name."""
+
     with path.open(encoding="utf-8-sig", newline="") as source:
         return list(csv.DictReader(source))
 
 
 def to_int(value, default: int = 0) -> int:
+    """Convert a numeric metadata value to an integer.
+
+    Args:
+        value: String or numeric value; decimal values are truncated by int().
+        default: Fallback for a missing or invalid value.
+
+    Returns:
+        The converted integer or default."""
+
     try:
         return int(float(value))
     except (TypeError, ValueError):
@@ -38,6 +49,16 @@ def to_int(value, default: int = 0) -> int:
 
 
 def load_games(path: Path) -> dict[int, dict]:
+    """Load game metadata used by the condition filter.
+
+    Args:
+        path: games.csv containing item_id, name, player and playtime limits.
+
+    Returns:
+        A dictionary from item ID to name, limits, and eligibility flag.
+
+    Missing numeric fields become zero and fail the appropriate validity checks."""
+
     games = {}
     for row in read_csv(path):
         games[int(row["item_id"])] = {
@@ -46,14 +67,20 @@ def load_games(path: Path) -> dict[int, dict]:
             "max_p": to_int(row.get("max_players")),
             "min_t": to_int(row.get("min_playtime")),
             "max_t": to_int(row.get("max_playtime")),
-            # team column: 1 = usable game (absent in older files -> use our own check)
+            # Older CSVs lack an eligibility flag; the local validity checks still apply.
             "eligible": row.get("condition_eligible", "1").strip() not in ("0", "False", "false"),
         }
     return games
 
 
 def is_valid(game: dict) -> bool:
-    """Plan rule: drop games with 0 time or an impossible player/time range."""
+    """Check the player range and the recorded maximum playtime.
+
+    Args:
+        game: Metadata dictionary returned by load_games.
+
+    Returns:
+        True when the player range is ordered and maximum time is positive."""
     return (
         game["min_p"] >= 1
         and game["max_p"] >= game["min_p"]
@@ -63,12 +90,30 @@ def is_valid(game: dict) -> bool:
 
 
 def fits(game: dict, players: int, minutes: int) -> bool:
-    # Assumption: "recorded play time" = max_playtime, and it must fit the limit.
+    # Use maximum recorded playtime when checking the available minutes.
+    """Check whether one game satisfies the requested group and time limit.
+
+    Args:
+        game: Metadata dictionary with eligibility, player range and playtime.
+        players: Requested positive number of players.
+        minutes: Maximum allowed playing time in minutes.
+
+    Returns:
+        True if metadata are valid, the group fits, and max_t <= minutes.
+
+    The recorded maximum playtime is used as a conservative time estimate."""
+
     return game["eligible"] and is_valid(game) and game["min_p"] <= players <= game["max_p"] and game["max_t"] <= minutes
 
 
 def load_users(path: Path) -> dict[str, int]:
-    """Profile key -> user_id. Uses `username` if the file has it, else the user_id number."""
+    """Index saved profiles by their number and optional name.
+
+    Args:
+        path: users.csv containing user_id and optionally username.
+
+    Returns:
+        A mapping from lowercase profile keys to integer user IDs."""
     users = {}
     for row in read_csv(path):
         uid = int(row["user_id"])
@@ -79,6 +124,16 @@ def load_users(path: Path) -> dict[str, int]:
 
 
 def load_train(path: Path) -> tuple[dict[int, set[int]], Counter]:
+    """Collect seen games and game-rating counts from training data.
+
+    Args:
+        path: train.csv containing user_id, item_id and rating.
+
+    Returns:
+        A pair of user-to-seen-game sets and a game-to-rating-count Counter.
+
+    The guest ranking uses these counts; it differs from the Bayesian baseline."""
+
     seen: dict[int, set[int]] = defaultdict(set)
     counts: Counter = Counter()  # popularity = number of training ratings
     for row in read_csv(path):
@@ -88,6 +143,14 @@ def load_train(path: Path) -> tuple[dict[int, set[int]], Counter]:
 
 
 def load_scores(path: Path) -> dict[int, dict[int, float]]:
+    """Read saved hybrid scores for existing profiles.
+
+    Args:
+        path: CSV containing user_id, item_id and score.
+
+    Returns:
+        Nested dictionaries scores[user_id][item_id]; empty if the file is absent."""
+
     scores: dict[int, dict[int, float]] = defaultdict(dict)
     if path.exists():
         for row in read_csv(path):
@@ -96,6 +159,14 @@ def load_scores(path: Path) -> dict[int, dict[int, float]]:
 
 
 def ask_int(prompt: str) -> int:
+    """Prompt until a positive whole number is entered.
+
+    Args:
+        prompt: Text shown before reading each attempted input.
+
+    Returns:
+        The accepted integer."""
+
     while True:
         raw = input(prompt).strip()
         if raw.isdigit() and int(raw) >= 1:
@@ -104,7 +175,19 @@ def ask_int(prompt: str) -> int:
 
 
 def recommend(games, candidates, user_scores, counts, k):
-    """Rank candidates. Personalized if user_scores is given, else popularity."""
+    """Order eligible game IDs by profile score or training popularity.
+
+    Args:
+        games: Game dictionary accepted by the CLI interface; filtering occurs before this call.
+        candidates: Game IDs remaining after condition and seen-item filtering.
+        user_scores: Hybrid item-score mapping, or None for the guest ranking.
+        counts: Training rating counts used for popularity and score ties.
+        k: Maximum number of games to return.
+
+    Returns:
+        Up to k ranked game IDs.
+
+    For personalized output, games missing a saved score follow scored games; ties use training counts and then item ID."""
     if user_scores is None:
         key = lambda i: (-counts[i], i)
     else:
@@ -114,7 +197,12 @@ def recommend(games, candidates, user_scores, counts, k):
 
 
 def make_sample(folder: Path) -> None:
-    """Write a tiny dataset in the same format as the real files."""
+    """Write a small synthetic dataset for checking CLI input and filtering.
+
+    Args:
+        folder: Destination directory for games.csv, users.csv, train.csv and scores.csv.
+
+    The random values use seed 42. This fixture is separate from the BGG sample and final evaluation data."""
     folder.mkdir(parents=True, exist_ok=True)
     rng = random.Random(42)
     games = [
@@ -156,6 +244,10 @@ def make_sample(folder: Path) -> None:
 
 
 def main() -> None:
+    """Run the profile, player-count and playtime prompts.
+
+    CLI options select --data-dir, --scores and --top-k. The optional --make-sample writes a synthetic fixture and exits. An unknown profile, absent history or absent scores falls back to the guest ranking with a message."""
+
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--data-dir", type=Path, default=Path("data/processed"))
     parser.add_argument("--scores", type=Path, default=None, help="default: <data-dir>/scores.csv")

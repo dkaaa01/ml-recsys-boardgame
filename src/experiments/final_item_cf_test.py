@@ -27,7 +27,13 @@ from src.models.item_cf import ItemCFConfig, ItemItemCF
 
 
 def load_frozen_config(path: Path) -> tuple[ItemCFConfig, dict[str, float]]:
-    """Load only model parameters and validation metrics from the winner file."""
+    """Restore the saved validation winner without selecting new settings.
+
+    Args:
+        path: best-model JSON containing parameter fields and validation metrics.
+
+    Returns:
+        A ItemCFConfig instance and the saved validation-metric mapping."""
 
     with path.open(encoding="utf-8") as source:
         winner = json.load(source)
@@ -58,7 +64,15 @@ def write_final_report(
     fit_seconds: float,
     evaluation_seconds: float,
 ) -> None:
-    """Save machine-readable results, a Markdown report, and a comparison plot."""
+    """Write frozen ItemCF test evidence and the validation/test comparison.
+
+    Args:
+        output_dir: Directory for the JSON metrics, plot and Markdown summary.
+        config: Frozen ItemCFConfig restored from validation search.
+        validation: Previously saved validation metrics.
+        test: New held-out test metrics, including evaluated counts.
+        fit_seconds: Measured training duration in seconds.
+        evaluation_seconds: Measured test-scoring duration in seconds."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -127,7 +141,15 @@ used to select or change the model or its hyperparameters.
 
 
 def run_final_test(args: argparse.Namespace) -> dict[str, float]:
-    """Fit the frozen model on train and evaluate the untouched test split."""
+    """Fit the frozen validation winner and evaluate held-out test data.
+
+    Args:
+        args: CLI namespace with train, test, best_config, output_dir, total_users, total_items, top_k and relevant_threshold.
+
+    Returns:
+        The test metric dictionary; final JSON/plots are also written.
+
+    Train and test share an explicit matrix shape. Test metrics are reported after the configuration is fixed and are not used by this function to alter it."""
 
     # Step 1: restore the validation winner without changing any parameter.
     config, validation_metrics = load_frozen_config(args.best_config)
@@ -159,6 +181,10 @@ def run_final_test(args: argparse.Namespace) -> dict[str, float]:
 
 
 def main() -> None:
+    """Parse final-test paths and dimensions, then print the test metrics.
+
+    --train and --test select the fixed split CSVs; --best-config restores the validation winner; --output-dir receives results; --total-users/--total-items define matrix shape; --top-k is 10; --relevant-threshold defaults to 8."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train", type=Path, default=Path("data/experiment/train.csv"))
     parser.add_argument("--test", type=Path, default=Path("data/experiment/test.csv"))
