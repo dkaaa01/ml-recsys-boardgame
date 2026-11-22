@@ -14,7 +14,7 @@ used to select or change the model or its hyperparameters.
 
 ## Validation and final test metrics
 
-| Split | Rating error (RMSE) ↓ | Liked-game hit rate (Recall@10) ↑ | Ranking quality (NDCG@10) ↑ | Game diversity (Coverage) ↑ |
+| Split | Rating error (RMSE) ↓ | Liked-game hit rate (Recall@10) ↑ | Ranking quality (NDCG@10) ↑ | Catalog coverage ↑ |
 | --- | ---: | ---: | ---: | ---: |
 | Validation | 1.4859 | 0.0505 | 0.0421 | 0.9860 |
 | **Test (final)** | **1.4797** | **0.0499** | **0.0413** | **0.9860** |

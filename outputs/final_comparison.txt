@@ -1,0 +1,8 @@
+Test cohort: 20,000 users, 2,000 games
+Model                    Recall@10    NDCG@10   Coverage
+Bayesian popularity         0.0692     0.0530       3.0%
+Hybrid                      0.0554     0.0463      89.3%
+ItemCF                      0.0499     0.0413      98.6%
+Content-based               0.0438     0.0352      81.6%
+Matrix factorization        0.0239     0.0197      80.6%
+Saved comparison to reports/comparison

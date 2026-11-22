@@ -16,8 +16,7 @@ were evaluated in addition to the Bayesian popularity baseline.
 - Catalog coverage: 0.9860
 
 The best ItemCF NDCG@10 is lower than the Bayesian popularity control in this
-reduced validation dataset (0.0515). This is a useful diagnostic, not a
-reason to inspect the test set. The winning configuration can now be frozen before one final test evaluation.
+reduced validation dataset (0.0515). This setting was selected using validation scores.
 
 ## Visual outputs
 

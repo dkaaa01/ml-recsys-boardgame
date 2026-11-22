@@ -33,7 +33,7 @@ def load_frozen_config(path: Path) -> tuple[ItemCFConfig, dict[str, float]]:
         path: best-model JSON containing parameter fields and validation metrics.
 
     Returns:
-        A ItemCFConfig instance and the saved validation-metric mapping."""
+        An ItemCFConfig instance and the saved validation-metric mapping."""
 
     with path.open(encoding="utf-8") as source:
         winner = json.load(source)
@@ -127,7 +127,7 @@ used to select or change the model or its hyperparameters.
 
 ## Validation and final test metrics
 
-| Split | Rating error (RMSE) ↓ | Liked-game hit rate (Recall@10) ↑ | Ranking quality (NDCG@10) ↑ | Game diversity (Coverage) ↑ |
+| Split | Rating error (RMSE) ↓ | Liked-game hit rate (Recall@10) ↑ | Ranking quality (NDCG@10) ↑ | Catalog coverage ↑ |
 | --- | ---: | ---: | ---: | ---: |
 | Validation | {validation['rmse']:.4f} | {validation['recall_at_10']:.4f} | {validation['ndcg_at_10']:.4f} | {validation['coverage']:.4f} |
 | **Test (final)** | **{test['rmse']:.4f}** | **{test['recall_at_10']:.4f}** | **{test['ndcg_at_10']:.4f}** | **{test['coverage']:.4f}** |

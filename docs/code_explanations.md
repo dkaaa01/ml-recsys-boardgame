@@ -1,13 +1,13 @@
 # Code explanations and references
 
-This document explains the software architecture, implementation choices and library APIs used in the board game recommender. Function and method docstrings in the source files describe their arguments, return values, matrix shapes and relevant edge cases. Configuration classes document the parameters used by each model. The explanations include implementation details beyond the lecture formulas.
+This file explains how the project files work together and how the main library functions are used. Function descriptions in the code give the inputs, outputs and matrix shapes. The configuration classes explain each model parameter.
 
 ## Software architecture
 
 1. `src/data/download.py` retrieves the pinned Kaggle archive and checks its digest. `preprocess.py` validates ratings, joins game metadata, assigns compact IDs and writes common splits. SQLite stores intermediate ratings on disk so the raw file can exceed memory.
 2. `src/data/create_experiment_subset.py` selects the experiment catalog and activity groups using training counts. Evaluation eligibility also requires positive ratings in the held-out splits. `loader.py` loads sparse matrices. `eda.py` produces descriptive plots.
 3. `src/models/` implements the Bayesian popularity baseline, item-item collaborative filtering, matrix factorization and content-based recommendation. `hybrid.py` combines normalized collaborative and content scores. `hybrid_pipeline.py` adapts the fitted models to a shared candidate array.
-4. `src/experiments/` tunes configurations on validation data, evaluates frozen settings and writes tables and plots. `make_top10.py` exports the four personalized rankings. `final_model_comparison.py` adds the Bayesian baseline and verifies the common evaluation protocol before scoring all five models.
+4. `src/experiments/` tunes configurations on validation data, evaluates frozen settings and writes tables and plots. `make_top10.py` exports the four personalized rankings. `final_model_comparison.py` adds the Bayesian baseline and checks the common evaluation conditions before scoring all five models. `output_figures.py` draws report figures from saved results and captured console text.
 5. `recommend_cli.py` reads a profile, player count and time limit. It filters invalid or unsuitable games and ranks the remaining candidates. Guest ranking uses training rating counts. Profile ranking uses saved hybrid scores and excludes training-rated games.
 
 The demo and offline comparison have distinct scopes. The demo uses 200 users and 200 games. The final comparison uses 20,000 users and 2,000 games without player/time filters. The guest demo's count ranking differs from the Bayesian baseline's adjusted-average ranking.
@@ -71,7 +71,7 @@ The runtime dependencies are NumPy, SciPy and Matplotlib. Their pinned versions 
 | `sort`, `round`, `all`, `allclose`, `numpy.testing.assert_allclose` | Sorting produces stable ID lists, rounding formats output, and boolean/tolerance comparisons verify examples and tests. `assert_allclose(actual, desired, rtol, atol)` raises an assertion when values exceed the requested tolerance. `numpy.array` creates explicit test arrays. |
 | `diag`, `fill_diagonal`, `outer` | Read/remove self-similarity or form pairwise normalization terms. `outer(a,b)` creates all pair products. |
 | `einsum` | The subscript expression `ij,ij->i` computes one latent-vector dot product per observed pair. |
-| `add.at` | `array`, `indices` and `values` accumulate every repeated-index gradient contribution. |
+| `add.at` | `a`, `indices` and `b` specify the array, positions and values to add. Repeated positions receive all their gradient contributions. |
 | `quantile` | `a` and `q` choose the training-count prior strength for popularity shrinkage. |
 | `random.default_rng` | `seed` creates the reproducible random generator. `choice` samples configurations/users, `normal` initializes factors, `shuffle` permutes training order, and `integers` creates synthetic examples where used. |
 | `ndarray.copy`, `ravel`, `tolist`, indexing, transpose and `@` | Copy isolates score modifications, ravel converts results to one dimension, tolist creates ordinary output lists, and matrix multiplication computes similarities and predictions. |
@@ -88,6 +88,7 @@ The runtime dependencies are NumPy, SciPy and Matplotlib. Their pinned versions 
 | Axes labels, limits, ticks, scales, `legend`, `grid`, `text` and `annotate` | Titles and axis values identify metrics, trial IDs and configurations. `symlog` preserves zero while displaying larger shrinkage values. |
 | Figure `tight_layout`, `subplots_adjust`, `suptitle`, `text`, `colorbar`, `savefig` | Spacing parameters avoid overlap. `dpi` controls export resolution, and the path controls the saved figure. |
 | `pyplot.style.use`, `pyplot.close` | Select plot appearance and release the finished figure. |
+| `matplotlib.use` | The backend name `Agg` selects file rendering for the output-figure exporter. It is set before importing pyplot. |
 | `matplotlib.patches.Patch` | `facecolor` and `label` create similarity-family legend entries. |
 | `Figure`, `FigureCanvasAgg` | `figsize` sets a figure and the Agg canvas renders PNG output without an interactive display. |
 
@@ -105,8 +106,8 @@ Plot method parameters used in the figure writers are specified below. Each meth
 | `Axes.invert_yaxis`, `tick_params`, spine `set_visible` | Inversion puts the first model at the top. `axis`, `length` and `pad` control tick marks. The visibility boolean removes unneeded borders. |
 | Bar `get_x`, `get_width` | Return a rectangle's horizontal position and width so a label can be centered on its bar. |
 | `Figure.subplots` / `subplots_adjust` | Row/column counts create panels. `left`, `right`, `top`, `bottom` and `wspace` set panel placement. |
-| `Figure.text`, `suptitle`, `supxlabel`, `supylabel` | Text and figure-relative coordinates place titles, shared labels and captions. `fontsize`, `weight` and `color` control formatting. |
-| `Figure.colorbar` / `savefig` | The plotted object, target `ax` and `label` create a parameter scale. The output path, `dpi` and optional `bbox_inches` determine the saved image. |
+| `Figure.text`, `suptitle`, `supxlabel`, `supylabel` | Text and figure-relative coordinates place titles, shared labels and captions. `fontsize`, `weight`, `color`, `family` and `linespacing` control formatting. |
+| `Figure.colorbar` / `savefig` | The plotted object, target `ax` and `label` create a parameter scale. The output path, `dpi`, `bbox_inches` and `pad_inches` determine image resolution, bounds and padding. |
 
 ## Standard-library modules
 
@@ -139,10 +140,10 @@ Plot method parameters used in the figure writers are specified below. Each meth
 
 - **Course material.** Won Kim and Woong-Kee Loh, *Machine-Learning-Recommendation.pdf*: similarity metrics, item-based filtering, matrix factorization, content-based recommendation and hybrids. The text/vector-space lecture materials provide the TF-IDF and cosine background. Course PDFs remain course-provided material.
 - **Dataset.** Jeroen van Elteren, [BoardGameGeek Reviews on Kaggle](https://www.kaggle.com/datasets/jvanelteren/boardgamegeek-reviews), dataset version 4, 2025 files. [BoardGameGeek XML API](https://boardgamegeek.com/wiki/page/XML%20API) describes the original source. The download script records the archive digest.
-- **Existing hybrid reference.** ApX, [Weighted Hybridization in Recommenders](https://apxml.com/courses/building-ml-recommendation-system/chapter-6-constructing-a-hybrid-recommendation-system/weighted-hybridization). Used as the conceptual reference recorded in the team's hybrid notes.
+- **Hybrid reference.** ApX, [Weighted Hybridization in Recommenders](https://apxml.com/courses/building-ml-recommendation-system/chapter-6-constructing-a-hybrid-recommendation-system/weighted-hybridization). Background for combining two recommendation scores with a weight.
 - **Python APIs.** [Python standard-library reference](https://docs.python.org/3/library/) covers file I/O, CSV, JSON, SQLite, hashing, command-line arguments and unittest.
 - **NumPy APIs.** [NumPy reference](https://numpy.org/doc/stable/reference/) and [`numpy.add.at`](https://numpy.org/doc/stable/reference/generated/numpy.ufunc.at.html) document arrays, random generators and repeated-index accumulation.
 - **Sparse matrices.** [SciPy sparse-matrix reference](https://docs.scipy.org/doc/scipy/reference/sparse.html) documents the sparse representations and operations used in training.
 - **Plotting.** [Matplotlib API reference](https://matplotlib.org/stable/api/index.html) documents figure, axes and image-export operations.
 
-These references identify the course concepts, dataset, recorded hybrid reference and library interfaces. Function-level comments explain the concrete choices used in this implementation. The references do not establish performance claims about this particular experiment; those values come from the saved experiment files and common comparison code.
+The experiment values are stored in the CSV and JSON files under `reports/`.

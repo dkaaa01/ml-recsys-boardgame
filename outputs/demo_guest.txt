@@ -1,0 +1,15 @@
+Profile (user number or name, Enter for guest): 
+Players: 4
+Maximum playtime (minutes): 60
+
+[Guest popularity] 4 players | up to 60 minutes
+ 1. Pandemic  | 2-4 players | 45 min
+ 2. Carcassonne  | 2-5 players | 45 min
+ 3. Dominion  | 2-4 players | 30 min
+ 4. 7 Wonders  | 2-7 players | 30 min
+ 5. Codenames  | 2-8 players | 15 min
+ 6. Splendor  | 2-4 players | 30 min
+ 7. Azul  | 2-4 players | 45 min
+ 8. Ticket to Ride  | 2-5 players | 60 min
+ 9. King of Tokyo  | 2-6 players | 30 min
+10. Ticket to Ride: Europe  | 2-5 players | 60 min

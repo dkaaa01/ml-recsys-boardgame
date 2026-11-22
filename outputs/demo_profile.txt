@@ -1,0 +1,15 @@
+Profile (user number or name, Enter for guest): 0
+Players: 4
+Maximum playtime (minutes): 60
+
+[Personalized recommendation] 4 players | up to 60 minutes
+ 1. It's a Wonderful World  | 1-5 players | 45 min
+ 2. Race for the Galaxy  | 2-4 players | 60 min
+ 3. Sushi Go Party!  | 2-8 players | 20 min
+ 4. PARKS  | 1-5 players | 60 min
+ 5. Pandemic Legacy: Season 1  | 2-4 players | 60 min
+ 6. Res Arcana  | 2-4 players | 60 min
+ 7. Dominion  | 2-4 players | 30 min
+ 8. Colt Express  | 2-6 players | 40 min
+ 9. Sagrada  | 1-4 players | 45 min
+10. Smash Up  | 2-4 players | 45 min

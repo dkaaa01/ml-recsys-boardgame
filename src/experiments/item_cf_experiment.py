@@ -473,9 +473,9 @@ def write_results(
         else "This report is a validation smoke run on a deterministic user sample."
     )
     next_step = (
-        "The winning configuration can now be frozen before one final test evaluation."
+        "This setting was selected using validation scores."
         if full_validation
-        else "The next step is a larger validation run and then a targeted grid around the stable winner."
+        else "This run checks the settings on a smaller user sample."
     )
     comparison_scope = "reduced validation dataset" if full_validation else "sample"
     summary = f"""# {report_name}
@@ -496,8 +496,7 @@ were evaluated in addition to the Bayesian popularity baseline.
 - Catalog coverage: {float(best['coverage']):.4f}
 
 The best ItemCF NDCG@10 is {comparison} than the Bayesian popularity control in this
-{comparison_scope} ({float(baseline['ndcg_at_10']):.4f}). This is a useful diagnostic, not a
-reason to inspect the test set. {next_step}
+{comparison_scope} ({float(baseline['ndcg_at_10']):.4f}). {next_step}
 
 ## Visual outputs
 

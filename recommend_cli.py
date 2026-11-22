@@ -171,7 +171,7 @@ def ask_int(prompt: str) -> int:
         raw = input(prompt).strip()
         if raw.isdigit() and int(raw) >= 1:
             return int(raw)
-        print("1 이상의 숫자를 입력하세요.")
+        print("Enter a whole number of at least 1.")
 
 
 def recommend(games, candidates, user_scores, counts, k):
@@ -257,7 +257,7 @@ def main() -> None:
 
     if args.make_sample:
         make_sample(args.make_sample)
-        print(f"샘플 데이터를 {args.make_sample}에 만들었어요.")
+        print(f"Sample files saved to {args.make_sample}.")
         return
 
     games = load_games(args.data_dir / "games.csv")
@@ -265,32 +265,32 @@ def main() -> None:
     seen, counts = load_train(args.data_dir / "train.csv")
     scores = load_scores(args.scores or args.data_dir / "scores.csv")
 
-    name = input("프로필(사용자 번호 또는 이름)을 입력하세요. 게스트는 Enter를 누르세요. > ").strip()
-    user_id, mode = None, "게스트 인기순"
+    name = input("Profile (user number or name, Enter for guest): ").strip()
+    user_id, mode = None, "Guest popularity"
     if name:
         uid = users.get(name.lower())
         if uid is None or not seen.get(uid):
-            print(f"'{name}' 프로필은 학습 이력이 없어 게스트 추천으로 안내합니다.")
+            print(f"No training history for '{name}'. Using guest popularity.")
         elif uid not in scores:
-            print(f"'{name}' 프로필의 개인화 점수가 아직 없어 게스트 추천으로 안내합니다.")
+            print(f"No saved scores for '{name}'. Using guest popularity.")
         else:
-            user_id, mode = uid, "개인화 추천"
+            user_id, mode = uid, "Personalized recommendation"
 
-    players = ask_int("인원수를 입력하세요. > ")
-    minutes = ask_int("최대 플레이 시간(분)을 입력하세요. > ")
+    players = ask_int("Players: ")
+    minutes = ask_int("Maximum playtime (minutes): ")
 
     candidates = [i for i, g in games.items() if fits(g, players, minutes)]
     if user_id is not None:
         candidates = [i for i in candidates if i not in seen[user_id]]  # already rated
     ranked = recommend(games, candidates, scores[user_id] if user_id is not None else None, counts, args.top_k)
 
-    print(f"\n[{mode}] {players}명 · {minutes}분 이내")
+    print(f"\n[{mode}] {players} players | up to {minutes} minutes")
     if not ranked:
-        print("조건에 맞는 게임이 없어요.")
+        print("No games match these conditions.")
         return
     for rank, item in enumerate(ranked, start=1):
         g = games[item]
-        print(f"{rank:>2}. {g['name']}  | {g['min_p']}~{g['max_p']}명 | {g['max_t']}분")
+        print(f"{rank:>2}. {g['name']}  | {g['min_p']}-{g['max_p']} players | {g['max_t']} min")
 
 
 if __name__ == "__main__":
