@@ -23,6 +23,8 @@ Press Enter for a guest recommendation, or enter 0 to use an existing sample pro
 
     .venv/bin/python -m src.experiments.final_model_comparison
 
+The smaller submission copy includes the sample data only. In that copy, first run `python prepare_data.py` to download the full experiment CSVs and saved rankings from the fixed result version.
+
 This reads the saved recommendations and experiment CSVs. It checks that all five methods use the same 20,000 users, 2,000 games and seen-game exclusions, then writes the comparison CSV and figure under reports/comparison/.
 
 To redraw the report charts and the figures of the saved console output:
