@@ -7,7 +7,7 @@ This file explains how the project files work together and how the main library 
 1. `src/data/download.py` retrieves the pinned Kaggle archive and checks its digest. `preprocess.py` validates ratings, joins game metadata, assigns compact IDs and writes common splits. SQLite stores intermediate ratings on disk so the raw file can exceed memory.
 2. `src/data/create_experiment_subset.py` selects the experiment catalog and activity groups using training counts. Evaluation eligibility also requires positive ratings in the held-out splits. `loader.py` loads sparse matrices. `eda.py` produces descriptive plots.
 3. `src/models/` implements the Bayesian popularity baseline, item-item collaborative filtering, matrix factorization and content-based recommendation. `hybrid.py` combines normalized collaborative and content scores. `hybrid_pipeline.py` adapts the fitted models to a shared candidate array.
-4. `src/experiments/` tunes configurations on validation data, evaluates frozen settings and writes tables and plots. `make_top10.py` exports the four personalized rankings. `final_model_comparison.py` adds the Bayesian baseline and checks the common evaluation conditions before scoring all five models. `output_figures.py` draws report figures from saved results and captured console text.
+4. `src/experiments/` tunes configurations on validation data, evaluates frozen settings and writes tables and plots. `make_top10.py` exports the four personalized rankings. `final_model_comparison.py` adds the Bayesian baseline and checks the common evaluation conditions before scoring all five models. `output_figures.py` draws the test comparison and hybrid-weight charts from saved CSV results. The terminal screenshots are captured from actual program runs.
 5. `recommend_cli.py` reads a profile, player count and time limit. It filters invalid or unsuitable games and ranks the remaining candidates. Guest ranking uses training rating counts. Profile ranking uses saved hybrid scores and excludes training-rated games.
 
 The demo and offline comparison have distinct scopes. The demo uses 200 users and 200 games. The final comparison uses 20,000 users and 2,000 games without player/time filters. The guest demo's count ranking differs from the Bayesian baseline's adjusted-average ranking.
@@ -73,7 +73,7 @@ The runtime dependencies are NumPy, SciPy and Matplotlib. Their pinned versions 
 | `einsum` | The subscript expression `ij,ij->i` computes one latent-vector dot product per observed pair. |
 | `add.at` | `a`, `indices` and `b` specify the array, positions and values to add. Repeated positions receive all their gradient contributions. |
 | `quantile` | `a` and `q` choose the training-count prior strength for popularity shrinkage. |
-| `random.default_rng` | `seed` creates the reproducible random generator. `choice` samples configurations/users, `normal` initializes factors, `shuffle` permutes training order, and `integers` creates synthetic examples where used. |
+| `random.default_rng` | `seed` creates the reproducible random generator. `choice` samples configurations/users, `normal` initializes factors, and `shuffle` permutes training order. |
 | `ndarray.copy`, `ravel`, `tolist`, indexing, transpose and `@` | Copy isolates score modifications, ravel converts results to one dimension, tolist creates ordinary output lists, and matrix multiplication computes similarities and predictions. |
 | `scipy.sparse.coo_matrix` | `(values, (rows, columns))`, `shape` and `dtype` construct a rating matrix from triplets. Missing entries stay unstored. |
 | `scipy.sparse.csr_matrix` | Input data, `shape` and `dtype` create a row-oriented sparse matrix for users or feature vectors. |
@@ -132,7 +132,6 @@ Plot method parameters used in the figure writers are specified below. Each meth
 | `itertools.islice` | An iterable and stop count take the first K eligible popular games. |
 | `time.perf_counter` | Measures elapsed fitting/evaluation time. Timing varies by machine and is descriptive. |
 | `os.environ.setdefault` | A variable name and default path direct plotting caches to a writable project directory. |
-| `random.Random` | A seed creates repeatable tiny synthetic data for the optional CLI format example. These records are separate from the BGG experiment. |
 | `typing`, `collections.abc`, `__future__.annotations` | Type annotations describe accepted data and return values, including callables and sparse/mapping interfaces. |
 | `unittest.TestCase`, `unittest.mock.patch`, `tempfile.TemporaryDirectory` | The tests use assertions, scoped dependency replacement and temporary output folders. `patch` targets a named function with a controlled replacement. The suite runs with Python's standard-library unittest runner. |
 

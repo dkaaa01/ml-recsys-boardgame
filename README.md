@@ -27,7 +27,7 @@ The smaller submission copy includes the sample data only. In that copy, first r
 
 This reads the saved recommendations and experiment CSVs. It checks that all five methods use the same 20,000 users, 2,000 games and seen-game exclusions, then writes the comparison CSV and figure under reports/comparison/.
 
-To redraw the report charts and the figures of the saved console output:
+To redraw the report charts:
 
     .venv/bin/python -m src.experiments.output_figures
 

@@ -7,14 +7,12 @@ CSV inputs are games.csv, users.csv, train.csv and an optional scores.csv.
 Run the BGG execution sample from the repository root with:
     python recommend_cli.py --data-dir data/sample --scores outputs/scores.csv
 
---make-sample writes a separate synthetic fixture for input/filter checks.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
-import random
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -196,69 +194,16 @@ def recommend(games, candidates, user_scores, counts, k):
     return sorted(candidates, key=key)[:k]
 
 
-def make_sample(folder: Path) -> None:
-    """Write a small synthetic dataset for checking CLI input and filtering.
-
-    Args:
-        folder: Destination directory for games.csv, users.csv, train.csv and scores.csv.
-
-    The random values use seed 42. This fixture is separate from the BGG sample and final evaluation data."""
-    folder.mkdir(parents=True, exist_ok=True)
-    rng = random.Random(42)
-    games = [
-        # item_id, name, min_p, max_p, min_t, max_t
-        (0, "Fast Cards", 2, 4, 15, 20),
-        (1, "Space Trade", 2, 5, 60, 90),
-        (2, "Cooperative Escape", 2, 4, 30, 45),
-        (3, "Party Words", 4, 8, 20, 30),
-        (4, "Quick Tiles", 2, 4, 20, 30),
-        (5, "Epic Empire", 3, 5, 120, 240),
-        (6, "Farm Builder", 1, 5, 45, 60),
-        (7, "Duel Chess-like", 2, 2, 20, 30),
-        (8, "Broken Data A", 2, 4, 0, 0),      # time 0 -> excluded
-        (9, "Broken Data B", 5, 2, 30, 60),    # bad player range -> excluded
-        (10, "Deck Fighters", 2, 4, 30, 60),
-        (11, "Island Race", 3, 4, 45, 60),
-    ]
-    with (folder / "games.csv").open("w", encoding="utf-8", newline="") as out:
-        w = csv.writer(out)
-        w.writerow(("item_id", "name", "min_players", "max_players", "min_playtime", "max_playtime"))
-        w.writerows(games)
-    with (folder / "users.csv").open("w", encoding="utf-8", newline="") as out:
-        w = csv.writer(out)
-        w.writerow(("user_id", "username"))
-        w.writerows([(0, "James"), (1, "NoHistory")])
-    with (folder / "train.csv").open("w", encoding="utf-8", newline="") as out:
-        w = csv.writer(out)
-        w.writerow(("user_id", "item_id", "rating"))
-        for item in (0, 1, 2):
-            w.writerow((0, item, 8))              # James already rated games 0-2
-        for user in range(2, 12):                 # filler users build popularity
-            for item in rng.sample(range(12), 6):
-                w.writerow((user, item, rng.randint(5, 10)))
-    with (folder / "scores.csv").open("w", encoding="utf-8", newline="") as out:
-        w = csv.writer(out)
-        w.writerow(("user_id", "item_id", "score"))
-        for item in range(12):
-            w.writerow((0, item, round(rng.random(), 3)))  # only James has scores
-
-
 def main() -> None:
     """Run the profile, player-count and playtime prompts.
 
-    CLI options select --data-dir, --scores and --top-k. The optional --make-sample writes a synthetic fixture and exits. An unknown profile, absent history or absent scores falls back to the guest ranking with a message."""
+    CLI options select --data-dir, --scores and --top-k. An unknown profile, absent history or absent scores falls back to the guest ranking with a message."""
 
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--data-dir", type=Path, default=Path("data/processed"))
     parser.add_argument("--scores", type=Path, default=None, help="default: <data-dir>/scores.csv")
     parser.add_argument("--top-k", type=int, default=10)
-    parser.add_argument("--make-sample", type=Path, default=None, help="create tiny sample files and exit")
     args = parser.parse_args()
-
-    if args.make_sample:
-        make_sample(args.make_sample)
-        print(f"Sample files saved to {args.make_sample}.")
-        return
 
     games = load_games(args.data_dir / "games.csv")
     users = load_users(args.data_dir / "users.csv")

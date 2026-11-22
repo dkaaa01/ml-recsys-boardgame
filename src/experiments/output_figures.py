@@ -1,4 +1,4 @@
-"""Save report figures from the stored results and console output.
+"""Save report charts from the stored experiment results.
 
 Run from the repository root with python -m src.experiments.output_figures.
 This redraws the figures without fitting or changing any model.
@@ -64,28 +64,8 @@ def plot_hybrid_weights(results_path: Path, output_path: Path) -> None:
     plt.close(figure)
 
 
-def save_console_figure(text_path: Path, image_path: Path) -> None:
-    """Display captured program output as a plain text figure.
-
-    Args:
-        text_path: UTF-8 console output recorded from recommend_cli.py.
-        image_path: PNG file to save.
-
-    The text is displayed as recorded, without adding a simulated app window.
-    """
-    text = text_path.read_text(encoding="utf-8").rstrip()
-    line_count = len(text.splitlines())
-    figure = plt.figure(figsize=(10, max(3.6, line_count * 0.25)), facecolor="white")
-    figure.text(
-        0.025, 0.97, text, va="top", family="DejaVu Sans Mono",
-        fontsize=10.2, linespacing=1.35, color="black",
-    )
-    figure.savefig(image_path, dpi=180, bbox_inches="tight", pad_inches=0.08)
-    plt.close(figure)
-
-
 def main() -> None:
-    """Redraw the report charts and both console figures from the saved files."""
+    """Redraw the test comparison and hybrid-weight charts from saved CSV files."""
     plot_test_ndcg(
         ROOT / "reports/comparison/test_metrics.csv",
         ROOT / "reports/comparison/ndcg_at_10.png",
@@ -94,11 +74,6 @@ def main() -> None:
         ROOT / "reports/hybrid/weight_validation.csv",
         ROOT / "reports/hybrid/weight_validation.png",
     )
-    for profile in ("guest", "profile"):
-        save_console_figure(
-            ROOT / f"outputs/demo_{profile}.txt",
-            ROOT / f"reports/hybrid/cli_{profile}.png",
-        )
 
 
 if __name__ == "__main__":
